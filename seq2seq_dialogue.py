@@ -1,9 +1,10 @@
 from os import getcwd, path, makedirs
+from sys import argv
 import logging
 
 import numpy as np
 
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 from keras.layers import Embedding
 
 from seq2seq.models import AttentionSeq2Seq
@@ -48,17 +49,17 @@ def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matr
         weights=[in_embedding_matrix],
         input_length=BUCKETS[1][0],
         trainable=True,
-        name='emb'
+        name='emb',
     )
     seq2seq_model = AttentionSeq2Seq(
         bidirectional=False,
         input_dim=embedding_size,
         input_length=BUCKETS[1][0],
         output_dim=len(in_decoder_vocabulary) + 1,
-        hidden_dim=64,
+        hidden_dim=32,
         output_length=BUCKETS[1][1],
-        depth=3,
-        dropout=0.2
+        depth=1,
+        dropout=0.0
     )
     model = Sequential()
     model.add(embedding_layer)
@@ -215,24 +216,6 @@ def self_test():
                  bucket_id, False)
 
 
-def init_session(sess, conf='seq2seq.ini'):
-    global gConfig
-    gConfig = get_config(conf)
- 
-    # Create model and load parameters.
-    model = create_model(sess, True)
-    model.batch_size = 1  # We decode one sentence at a time.
-
-    # Load vocabularies.
-    enc_vocab_path = os.path.join(gConfig['working_directory'],"vocab%d.enc" % gConfig['enc_vocab_size'])
-    dec_vocab_path = os.path.join(gConfig['working_directory'],"vocab%d.dec" % gConfig['dec_vocab_size'])
-
-    enc_vocab, _ = data_utils.initialize_vocabulary(enc_vocab_path)
-    _, rev_dec_vocab = data_utils.initialize_vocabulary(dec_vocab_path)
-
-    return sess, model, enc_vocab, rev_dec_vocab
-
-
 def decode_line(sess, model, enc_vocab, rev_dec_vocab, sentence):
     # Get token-ids for the input sentence.
     token_ids = data_utils.sentence_to_token_ids(tf.compat.as_bytes(sentence), enc_vocab)
@@ -256,26 +239,33 @@ def decode_line(sess, model, enc_vocab, rev_dec_vocab, sentence):
     return " ".join([tf.compat.as_str(rev_dec_vocab[output]) for output in outputs])
 
 
-def main():
+def main(in_command):
+    MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
     enc_vocab, enc_rev_vocab, dec_vocab, dec_rev_vocab, embeddings, train_set, dev_set = prepare_data()
-    model = create_model(enc_vocab, dec_vocab, embeddings)
-    targets = np.zeros(
-        (len(train_set[BUCKETS[1]]['outputs']), BUCKETS[1][1], len(enc_vocab) + 1), 
-        dtype=np.int32
-    )
-    model.fit(
-        train_set[BUCKETS[1]]['inputs'],
-        train_set[BUCKETS[1]]['outputs'],
-        batch_size=1,
-        nb_epoch=10
-    )
-    model.evaluate(
-        dev_set[BUCKETS[1]]['inputs'],
-        dev_set[BUCKETS[1]]['outputs'] 
-    )
-    model_file = path.join(WORKING_DIR, 'model.h5')
-    model.save(model_file, overwrite=True)
+    if in_command == 'train':
+        model = create_model(enc_vocab, dec_vocab, embeddings)
+        model.fit(
+            train_set[BUCKETS[1]]['inputs'],
+            train_set[BUCKETS[1]]['outputs'],
+            batch_size=16,
+            nb_epoch=1
+        )
+        model.save(MODEL_FILE, overwrite=True)
+
+        print model.evaluate(
+            dev_set[BUCKETS[1]]['inputs'],
+            dev_set[BUCKETS[1]]['outputs'],
+            batch_size=16,
+            verbose=True
+        )
+    if in_command == 'test':
+        model = load_model(MODEL_FILE)
+        model.predict(dev_set[BUCKETS[1]]['inputs'][0])
 
 
 if __name__ == '__main__':
-    main()
+    if len(argv) < 2:
+        print 'Usage: seq2seq_dialogue.py <train|test>'
+        exit()
+    command = argv[1].lower()
+    main(command)
