@@ -41,7 +41,7 @@ WORD2VEC_MODEL_PATH = path.join(
 )
 
 
-def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matrix):
+def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matrix, mode='train'):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
     embedding_layer = Embedding(
         len(in_encoder_vocabulary) + 1,
@@ -55,11 +55,11 @@ def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matr
         bidirectional=False,
         input_dim=embedding_size,
         input_length=BUCKETS[1][0],
-        output_dim=len(in_decoder_vocabulary) + 1,
+        output_dim=embedding_size,
         hidden_dim=32,
         output_length=BUCKETS[1][1],
         depth=1,
-        dropout=0.0
+        dropout=0.0 if mode == 'test' else 0.2
     )
     model = Sequential()
     model.add(embedding_layer)
@@ -216,27 +216,18 @@ def self_test():
                  bucket_id, False)
 
 
-def decode_line(sess, model, enc_vocab, rev_dec_vocab, sentence):
-    # Get token-ids for the input sentence.
-    token_ids = data_utils.sentence_to_token_ids(tf.compat.as_bytes(sentence), enc_vocab)
-
-    # Which bucket does it belong to?
-    bucket_id = min([b for b in xrange(len(_buckets)) if len(token_ids) < BUCKETS[b][0]])
-
-    # Get a 1-element batch to feed the sentence to the model.
-    encoder_inputs, decoder_inputs, target_weights = model.get_batch({bucket_id: [(token_ids, [])]}, bucket_id)
-
-    # Get output logits for the sentence.
-    _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs, target_weights, bucket_id, True)
-
-    # This is a greedy decoder - outputs are just argmaxes of output_logits.
-    outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-
-    # If there is an EOS symbol in outputs, cut them at that point.
-    if data_utils.STOP_ID in outputs:
-        outputs = outputs[:outputs.index(data_utils.STOP_ID)]
-
-    return " ".join([tf.compat.as_str(rev_dec_vocab[output]) for output in outputs])
+def decode_line(model, enc_vocab, in_embeddings, sentence):
+    words = sentence.split()
+    decoder_inputs = np.zeros((1, len(words), embedding_matrix.shape[1]), dtype=np.int32)
+    for word_index, word in enumerate(words):
+        token_id = enc_vocab[word.lower()]
+        decoder_inputs[0][word_index][token_id] = 1
+    decoder_outputs = model.predict(decoder_inputs)
+    result = ' '.join([
+        in_embeddings.similar_by_vector(output)[0][0]
+        for output in decoder_outputs
+    ])
+    return result
 
 
 def main(in_command):
@@ -250,8 +241,10 @@ def main(in_command):
             batch_size=16,
             nb_epoch=1
         )
-        model.save(MODEL_FILE, overwrite=True)
-
+        model.save_weights(MODEL_FILE, overwrite=True)
+        del model
+        model = create_model(enc_vocab, dec_vocab, embeddings, mode='test')
+        model.load_weights(MODEL_FILE)
         print model.evaluate(
             dev_set[BUCKETS[1]]['inputs'],
             dev_set[BUCKETS[1]]['outputs'],
@@ -259,7 +252,8 @@ def main(in_command):
             verbose=True
         )
     if in_command == 'test':
-        model = load_model(MODEL_FILE)
+        model = create_model(enc_vocab, dec_vocab, embeddings, mode='test')
+        model.load_weights(MODEL_FILE)
         model.predict(dev_set[BUCKETS[1]]['inputs'][0])
 
 

@@ -165,10 +165,9 @@ def prepare_custom_data(
     dev_set = pad_and_bucket(enc_dev_ids_path, dec_dev_ids_path, in_buckets)
     for bucket in train_set:
         train_set[bucket]['inputs'] = np.asarray(train_set[bucket]['inputs'], dtype=np.int32)
-        train_set[bucket]['outputs'] = ids_to_one_hots(train_set[bucket]['outputs'], len(dec_vocab))
-    for bucket in dev_set:
+        train_set[bucket]['outputs'] = ids_to_embeddings(train_set[bucket]['outputs'], embeddings)
         dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'], dtype=np.int32)
-        dev_set[bucket]['outputs'] = ids_to_one_hots(dev_set[bucket]['outputs'], len(dec_vocab))
+        dev_set[bucket]['outputs'] = ids_to_embeddings(dev_set[bucket]['outputs'], embeddings)
     return enc_vocab, enc_rev_vocab, dec_vocab, dec_rev_vocab, embeddings, train_set, dev_set
 
 
@@ -246,10 +245,24 @@ def ids_to_one_hots(in_ids_bucket, in_vocabulary_size):
     return result
 
 
+def ids_to_embeddings(in_ids_bucket, in_embedding_matrix):
+    if not len(in_ids_bucket):
+        return None
+    embedding_size = in_embedding_matrix.shape[1]
+    result = np.zeros(
+        (len(in_ids_bucket), len(in_ids_bucket[0]), embedding_size),
+        dtype=np.float32
+    )
+    for sequence_id, sequence in enumerate(in_ids_bucket):
+        for id_index, token_id in enumerate(sequence):
+            result[sequence_id][id_index] = in_embedding_matrix[token_id] 
+    return result 
+
+
 def build_embedding_matrix(in_vocabulary, in_w2v_model):
     EMBEDDING_DIM = in_w2v_model.vector_size
 
-    result = np.zeros((len(in_vocabulary) + 1, EMBEDDING_DIM))
+    result = np.zeros((len(in_vocabulary) + 1, EMBEDDING_DIM), dtype=np.float32)
     for word, word_index in in_vocabulary.iteritems():
         if word in in_w2v_model:
             # words not found in embedding index will be all-zeros.
