@@ -28,6 +28,30 @@ WORD_SPLIT = re.compile(b"([.,!?\"':;)(])")
 DIGIT_RE = re.compile(br"\d")
 
 
+class BatchGenerator(object):
+    def __init__(self, in_enc_filename, in_dec_filename, in_batch_size, in_vocabulary_size, in_buckets):
+        self.encoder_src = open(in_enc_filename)
+        self.decoder_src = open(in_dec_filename)
+        self.batch_size = in_batch_size
+        self.buckets = in_buckets
+        self.vocabulary_size = in_vocabulary_size
+        self.max_len = 10 # TODO: proper bucketing
+
+    def generate_batch(self):
+        X_list, y_list = [], []
+        go_on = True
+        while go_on:
+            encoder_input = self.encoder_src.readline().strip()
+            decoder_input = self.decoder_src.readline().strip()
+            if not encoder_input or not decoder_input:
+                break
+            X_list.append()
+
+    def close_files(self):
+        self.encoder_src.close()
+        self.decoder_src.close()
+
+
 def get_special_token_vector(in_token_id, in_embedding_size):
     assert PAD_ID <= in_token_id <= UNK_ID
     dummy_vector = np.zeros((1, in_embedding_size), dtype=np.float32)
@@ -139,10 +163,6 @@ def prepare_custom_data(
     mode='emb_to_emb',
     tokenizer=None
 ):
-    if mode == 'emb_to_1hot':
-        raise NotImplementedError(
-            'Working only in emb_to_emb way for now'
-        )
     max_vocabulary_size = 100000
     # vocabulary is shared between the encoder and decoder
     vocab_path = path.join(working_directory, 'vocab')
@@ -154,11 +174,10 @@ def prepare_custom_data(
     )
 
     vocab, rev_vocab = initialize_vocabulary(vocab_path)
-    
+
     if not path.exists(embeddings_path):
         logger.info('Building embeddings matrix for encoder vocabulary')
         embeddings = build_embedding_matrix(
-            vocab,
             Word2Vec.load_word2vec_format(w2v_model_path, binary=True)
         )
         with open(embeddings_path, 'wb') as embeddings_out:
@@ -300,15 +319,23 @@ def ids_to_embeddings(in_ids_bucket, in_embedding_matrix):
     return result 
 
 
-def build_embedding_matrix(in_vocabulary, in_w2v_model):
+def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):
     EMBEDDING_DIM = in_w2v_model.vector_size
-
-    result = np.zeros((len(in_vocabulary) + 1, EMBEDDING_DIM), dtype=np.float32)
-    for word, word_index in in_vocabulary.iteritems():
-        if word in in_w2v_model:
-            # words not found in embedding index will be all-zeros.
+    # if a base vocabulary is given, only building embeddings for words in it
+    if in_base_vocabulary:
+        result = np.zeros((len(in_vocabulary) + 1, EMBEDDING_DIM), dtype=np.float32)
+        for word, word_index in in_vocabulary.iteritems():
+            if word in in_w2v_model:
+                # words not found in embedding index will be all-zeros.
+                result[word_index] = in_w2v_model[word]
+        # adding dummy vectors for special tokens
+        for word_id in [PAD_ID, GO_ID, STOP_ID, UNK_ID]:
+            result[word_index] = get_special_token_vector(word_id, EMBEDDING_DIM)
+    else:
+        result = np.zeros(
+            (len(in_w2v_model.vocab), in_w2v_model.vector_size),
+            dtype=np.float32
+        )
+        for word_index, word in enumerate(in_w2v_model.vocab.keys()):
             result[word_index] = in_w2v_model[word]
-    # adding dummy vectors for special tokens
-    for word_id in [PAD_ID, GO_ID, STOP_ID, UNK_ID]:
-        result[word_index] = get_special_token_vector(word_id, EMBEDDING_DIM)
     return result

@@ -7,6 +7,7 @@ import numpy as np
 from keras.models import Sequential, load_model
 from keras.layers import Embedding
 
+from gensim.models import Word2Vec
 from seq2seq.models import AttentionSeq2Seq
 
 from data_utils import pad_and_bucket, prepare_custom_data, START_VOCAB
@@ -50,6 +51,7 @@ def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matr
         input_length=BUCKETS[1][0],
         trainable=True,
         name='emb',
+        mask_zero=True
     )
     seq2seq_model = AttentionSeq2Seq(
         bidirectional=False,
@@ -233,6 +235,16 @@ def decode_line(model, enc_vocab, in_embeddings, sentence):
     return result
 
 
+def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
+    
+    result = ' '.join([
+    
+        in_w2v.similar_by_vector(in_decoder_outputs[vector_index])[0][0]
+        for vector_index in xrange(in_decoder_outputs.shape[0])
+    ])
+    return result
+
+
 def main(in_command):
     MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
     vocab, rev_vocab, embeddings, train_set, dev_set = prepare_data()
@@ -257,7 +269,10 @@ def main(in_command):
     if in_command == 'test':
         model = create_model(vocab, vocab, embeddings, mode='test')
         model.load_weights(MODEL_FILE)
-        model.predict(dev_set[BUCKETS[1]]['inputs'][0])
+        w2v = Word2Vec.load_word2vec_format(WORD2VEC_MODEL_PATH, binary=True)
+        predictions = model.predict(dev_set[BUCKETS[1]]['inputs'])
+        for vector_index in xrange(predictions.shape[0]):
+            print visualize_decoded(vocab, w2v, predictions[vector_index])
 
 
 if __name__ == '__main__':
