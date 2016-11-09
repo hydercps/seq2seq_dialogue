@@ -218,7 +218,10 @@ def self_test():
 
 def decode_line(model, enc_vocab, in_embeddings, sentence):
     words = sentence.split()
-    decoder_inputs = np.zeros((1, len(words), embedding_matrix.shape[1]), dtype=np.int32)
+    decoder_inputs = np.zeros(
+        (1, len(words), in_embeddings.shape[1]),
+        dtype=np.int32
+    )
     for word_index, word in enumerate(words):
         token_id = enc_vocab[word.lower()]
         decoder_inputs[0][word_index][token_id] = 1
@@ -232,9 +235,9 @@ def decode_line(model, enc_vocab, in_embeddings, sentence):
 
 def main(in_command):
     MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
-    enc_vocab, enc_rev_vocab, dec_vocab, dec_rev_vocab, embeddings, train_set, dev_set = prepare_data()
+    vocab, rev_vocab, embeddings, train_set, dev_set = prepare_data()
     if in_command == 'train':
-        model = create_model(enc_vocab, dec_vocab, embeddings)
+        model = create_model(vocab, vocab, embeddings)
         model.fit(
             train_set[BUCKETS[1]]['inputs'],
             train_set[BUCKETS[1]]['outputs'],
@@ -243,7 +246,7 @@ def main(in_command):
         )
         model.save_weights(MODEL_FILE, overwrite=True)
         del model
-        model = create_model(enc_vocab, dec_vocab, embeddings, mode='test')
+        model = create_model(vocab, vocab, embeddings, mode='test')
         model.load_weights(MODEL_FILE)
         print model.evaluate(
             dev_set[BUCKETS[1]]['inputs'],
@@ -252,7 +255,7 @@ def main(in_command):
             verbose=True
         )
     if in_command == 'test':
-        model = create_model(enc_vocab, dec_vocab, embeddings, mode='test')
+        model = create_model(vocab, vocab, embeddings, mode='test')
         model.load_weights(MODEL_FILE)
         model.predict(dev_set[BUCKETS[1]]['inputs'][0])
 
