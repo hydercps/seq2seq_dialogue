@@ -28,28 +28,47 @@ WORD_SPLIT = re.compile(b"([.,!?\"':;)(])")
 DIGIT_RE = re.compile(br"\d")
 
 
+# Generating a batch of sequences for the specific bucket
 class BatchGenerator(object):
-    def __init__(self, in_enc_filename, in_dec_filename, in_batch_size, in_vocabulary_size, in_buckets):
+    def __init__(
+            self,
+            in_enc_filename,
+            in_dec_filename,
+            in_batch_size,
+            in_vocabulary_size,
+            in_bucket
+    ):
         self.encoder_src = open(in_enc_filename)
         self.decoder_src = open(in_dec_filename)
         self.batch_size = in_batch_size
-        self.buckets = in_buckets
+        self.bucket = in_bucket
         self.vocabulary_size = in_vocabulary_size
-        self.max_len = 10 # TODO: proper bucketing
 
     def generate_batch(self):
-        X_list, y_list = [], []
-        go_on = True
-        while go_on:
-            encoder_input = self.encoder_src.readline().strip()
-            decoder_input = self.decoder_src.readline().strip()
+        x_list, y_list = [], []
+        while len(x_list) < self.batch_size:
             if not encoder_input or not decoder_input:
                 break
-            X_list.append()
+            encoder_input = map(int, self.encoder_src.readline().split())
+            decoder_input = map(int, self.encoder_dst.readline().split())
+            if not(
+                len(encoder_input) < self.batch_size[0] and
+                len(decoder_input) < self.batch_size[1]
+            ):
+                continue
+            x_list.append(encoder_input)
+            y_list.append(decoder_input)
+        return x_list, y_list
 
     def close_files(self):
         self.encoder_src.close()
         self.decoder_src.close()
+
+
+def find_bucket_for_specific_lengths(in_src_length, in_tgt_length, in_buckets):
+    for bucket_index, (source_size, target_size) in enumerate(in_buckets):
+        if in_src_length < source_size and in_tgt_length < target_size:
+            return bucket_index
 
 
 def get_special_token_vector(in_token_id, in_embedding_size):
@@ -172,7 +191,6 @@ def prepare_custom_data(
         max_vocabulary_size,
         tokenizer
     )
-
     vocab, rev_vocab = initialize_vocabulary(vocab_path)
 
     if not path.exists(embeddings_path):
@@ -186,14 +204,14 @@ def prepare_custom_data(
         embeddings = np.load(embeddings_path)
 
     # Create token ids for the training data.
-    enc_train_ids_path = train_enc + (".ids")
-    dec_train_ids_path = train_dec + (".ids")
+    enc_train_ids_path = train_enc + '.ids'
+    dec_train_ids_path = train_dec + '.ids'
     data_to_token_ids(train_enc, enc_train_ids_path, vocab_path, tokenizer)
     data_to_token_ids(train_dec, dec_train_ids_path, vocab_path, tokenizer)
 
     # Create token ids for the development data.
-    enc_dev_ids_path = test_enc + (".ids")
-    dec_dev_ids_path = test_dec + (".ids")
+    enc_dev_ids_path = test_enc + '.ids'
+    dec_dev_ids_path = test_dec + '.ids'
     data_to_token_ids(test_enc, enc_dev_ids_path, vocab_path, tokenizer)
     data_to_token_ids(test_dec, dec_dev_ids_path, vocab_path, tokenizer)
 
@@ -208,7 +226,10 @@ def prepare_custom_data(
         in_buckets
     )
     for bucket in train_set:
-        train_set[bucket]['inputs'] = np.asarray(train_set[bucket]['inputs'], dtype=np.int32)
+        train_set[bucket]['inputs'] = np.asarray(
+            train_set[bucket]['inputs'],
+            dtype=np.int32
+        )
         dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'], dtype=np.int32)
         if mode == 'emb_to_emb':
             train_set[bucket]['outputs'] = ids_to_embeddings(
@@ -265,29 +286,34 @@ def pad_and_bucket(source_path, target_path, buckets, max_size=None):
             source_ids = [int(x) for x in source.split()[:-1]]
             target_ids = [GO_ID] + [int(x) for x in target.split()] + [STOP_ID]
 
-            for source_size, target_size in data_set:
-                if len(source_ids) < source_size and len(target_ids) < target_size:
-                    source_ids_padded = pad_sequences(
-                        [source_ids],
-                        maxlen=source_size,
-                        padding='pre',
-                        dtype='int32',
-                        value=PAD_ID
-                    )[0]
-                    target_ids_padded = pad_sequences(
-                        [target_ids],
-                        maxlen=target_size,
-                        padding='post',
-                        dtype='int32',
-                        value=PAD_ID
-                    )[0]
-                    data_set[(source_size, target_size)]['inputs'].append(
-                        source_ids_padded
-                    )
-                    data_set[(source_size, target_size)]['outputs'].append(
-                        target_ids_padded
-                    )
-                    break
+            bucket_id = find_bucket_for_specific_lengths(
+                len(source_ids),
+                len(target_ids),
+                buckets
+            )
+            if not bucket_id:
+                raise RuntimeError('Couldn\'t find bucket for the sequence')
+            source_size, target_size = buckets[bucket_id]
+            source_ids_padded = pad_sequences(
+                [source_ids],
+                maxlen=source_size,
+                padding='pre',
+                dtype='int32',
+                value=PAD_ID
+            )[0]
+            target_ids_padded = pad_sequences(
+                [target_ids],
+                maxlen=target_size,
+                padding='post',
+                dtype='int32',
+                value=PAD_ID
+            )[0]
+            data_set[(source_size, target_size)]['inputs'].append(
+                source_ids_padded
+            )
+            data_set[(source_size, target_size)]['outputs'].append(
+                target_ids_padded
+            )
             source, target = source_file.readline(), target_file.readline()
     return data_set
 
@@ -323,14 +349,20 @@ def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):
     EMBEDDING_DIM = in_w2v_model.vector_size
     # if a base vocabulary is given, only building embeddings for words in it
     if in_base_vocabulary:
-        result = np.zeros((len(in_vocabulary) + 1, EMBEDDING_DIM), dtype=np.float32)
-        for word, word_index in in_vocabulary.iteritems():
+        result = np.zeros(
+            (len(in_base_vocabulary) + 1, EMBEDDING_DIM),
+            dtype=np.float32
+        )
+        for word, word_index in in_base_vocabulary.iteritems():
             if word in in_w2v_model:
                 # words not found in embedding index will be all-zeros.
                 result[word_index] = in_w2v_model[word]
         # adding dummy vectors for special tokens
         for word_id in [PAD_ID, GO_ID, STOP_ID, UNK_ID]:
-            result[word_index] = get_special_token_vector(word_id, EMBEDDING_DIM)
+            result[word_index] = get_special_token_vector(
+                word_id,
+                EMBEDDING_DIM
+            )
     else:
         result = np.zeros(
             (len(in_w2v_model.vocab), in_w2v_model.vector_size),
