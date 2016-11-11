@@ -31,38 +31,74 @@ DIGIT_RE = re.compile(br"\d")
 # Generating a batch of sequences for the specific bucket
 class BatchGenerator(object):
     def __init__(
-            self,
-            in_enc_filename,
-            in_dec_filename,
-            in_batch_size,
-            in_vocabulary_size,
-            in_bucket
+        self,
+        in_enc_filename,
+        in_dec_filename,
+        in_batch_size,
+        in_vocabulary_size,
+        in_bucket,
+        in_embeddings=None
     ):
         self.encoder_src = open(in_enc_filename)
         self.decoder_src = open(in_dec_filename)
         self.batch_size = in_batch_size
-        self.bucket = in_bucket
         self.vocabulary_size = in_vocabulary_size
+        self.embeddings = in_embeddings
+        self.bucket = in_bucket
 
     def generate_batch(self):
         x_list, y_list = [], []
         while len(x_list) < self.batch_size:
-            if not encoder_input or not decoder_input:
-                break
-            encoder_input = map(int, self.encoder_src.readline().split())
-            decoder_input = map(int, self.encoder_dst.readline().split())
-            if not(
-                len(encoder_input) < self.batch_size[0] and
-                len(decoder_input) < self.batch_size[1]
-            ):
+            encoder_line = self.encoder_src.readline()
+            decoder_line = self.decoder_src.readline()
+            if not encoder_line or not decoder_line:
+                self.__reload_sources()
                 continue
-            x_list.append(encoder_input)
-            y_list.append(decoder_input)
-        return x_list, y_list
+            encoder_input = map(int, encoder_line.split())
+            decoder_input = map(int, decoder_line.split())
+            if (
+                len(encoder_input) < self.bucket[0] and
+                len(decoder_input) < self.bucket[1]
+            ):
+                x_list.append(encoder_input)
+                y_list.append(decoder_input)
+        # it's a full batch or nothing at all
+        if len(x_list) < self.batch_size:
+            raise RuntimeError('File contents insufficient for a batch')
 
-    def close_files(self):
-        self.encoder_src.close()
-        self.decoder_src.close()
+        X = [
+            self.sequence_to_vector(sequence, self.bucket[0])
+            for sequence in x_list
+        ]
+        y = [
+            self.sequence_to_vector(sequence, self.bucket[1])
+            for sequence in y_list
+        ]
+        return X, y
+
+    def sequence_to_vector(self, in_sequence, in_max_sequence_length):
+        sequence_padded = pad_sequences(
+            [in_sequence],
+            maxlen=in_max_sequence_length,
+            padding='post',
+            dtype='int32',
+            value=PAD_ID
+        )[0]
+        if self.embeddings:
+            sequence_padded = ids_to_embeddings(
+                sequence_padded,
+                self.embeddings
+            )
+        return np.asarray(sequence_padded)
+
+    def __reload_sources(self):
+        self.encoder_src.seek(0, 0)
+        self.decoder_src.seek(0, 0)
+
+
+def generate_sequences(in_batch_generator):
+    while True:
+        yield in_batch_generator.generate_batch()
 
 
 def find_bucket_for_specific_lengths(in_src_length, in_tgt_length, in_buckets):
@@ -170,6 +206,44 @@ def data_to_token_ids(
                 tokens_file.write(" ".join([str(tok) for tok in token_ids]) + "\n")
 
 
+def prepare_data_helper():
+    train_set = pad_and_bucket(
+        enc_train_ids_path,
+        dec_train_ids_path,
+        in_buckets
+    )
+    dev_set = pad_and_bucket(
+        enc_dev_ids_path,
+        dec_dev_ids_path,
+        in_buckets
+    )
+    for bucket in train_set:
+        train_set[bucket]['inputs'] = np.asarray(
+            train_set[bucket]['inputs'],
+            dtype=np.int32
+        )
+        dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'],
+                                               dtype=np.int32)
+        if mode == 'emb_to_emb':
+            train_set[bucket]['outputs'] = ids_to_embeddings(
+                train_set[bucket]['outputs'],
+                embeddings
+            )
+            dev_set[bucket]['outputs'] = ids_to_embeddings(
+                dev_set[bucket]['outputs'],
+                embeddings
+            )
+        elif mode == 'emb_to_1hot':
+            train_set[bucket]['outputs'] = ids_to_one_hots(
+                train_set[bucket]['outputs'],
+                len(vocab)
+            )
+            dev_set[bucket]['outputs'] = ids_to_one_hots(
+                dev_set[bucket]['outputs'],
+                len(vocab)
+            )
+
+
 def prepare_custom_data(
     working_directory,
     train_enc,
@@ -178,8 +252,6 @@ def prepare_custom_data(
     test_dec,
     w2v_model_path,
     embeddings_path,
-    in_buckets,
-    mode='emb_to_emb',
     tokenizer=None
 ):
     max_vocabulary_size = 100000
@@ -215,41 +287,15 @@ def prepare_custom_data(
     data_to_token_ids(test_enc, enc_dev_ids_path, vocab_path, tokenizer)
     data_to_token_ids(test_dec, dec_dev_ids_path, vocab_path, tokenizer)
 
-    train_set = pad_and_bucket(
+    return (
+        vocab,
+        rev_vocab,
+        embeddings,
         enc_train_ids_path,
         dec_train_ids_path,
-        in_buckets
-    )
-    dev_set = pad_and_bucket(
         enc_dev_ids_path,
-        dec_dev_ids_path,
-        in_buckets
+        dec_dev_ids_path
     )
-    for bucket in train_set:
-        train_set[bucket]['inputs'] = np.asarray(
-            train_set[bucket]['inputs'],
-            dtype=np.int32
-        )
-        dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'], dtype=np.int32)
-        if mode == 'emb_to_emb':
-            train_set[bucket]['outputs'] = ids_to_embeddings(
-                train_set[bucket]['outputs'],
-                embeddings
-            )
-            dev_set[bucket]['outputs'] = ids_to_embeddings(
-                dev_set[bucket]['outputs'],
-                embeddings
-            )
-        elif mode == 'emb_to_1hot':
-            train_set[bucket]['outputs'] = ids_to_one_hots(
-                train_set[bucket]['outputs'],
-                len(vocab)
-            )
-            dev_set[bucket]['outputs'] = ids_to_one_hots(
-                dev_set[bucket]['outputs'],
-                len(vocab)
-            )
-    return vocab, rev_vocab, embeddings, train_set, dev_set
 
 
 def pad_and_bucket(source_path, target_path, buckets, max_size=None):
@@ -331,18 +377,15 @@ def ids_to_one_hots(in_ids_bucket, in_vocabulary_size):
     return result
 
 
-def ids_to_embeddings(in_ids_bucket, in_embedding_matrix):
-    if not len(in_ids_bucket):
+def ids_to_embeddings(in_ids, in_embedding_matrix):
+    if not len(in_ids):
         return None
-    embedding_size = in_embedding_matrix.shape[1]
-    result = np.zeros(
-        (len(in_ids_bucket), len(in_ids_bucket[0]), embedding_size),
-        dtype=np.float32
-    )
-    for sequence_id, sequence in enumerate(in_ids_bucket):
-        for id_index, token_id in enumerate(sequence):
-            result[sequence_id][id_index] = in_embedding_matrix[token_id] 
-    return result 
+    vocab_size, embedding_size = in_embedding_matrix.shape
+    default_emb = np.zeros((1, embedding_size), dtype=np.float32)
+    return [
+        in_embedding_matrix[token_id] if token_id < vocab_size else default_emb
+        for token_id in in_ids
+    ]
 
 
 def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):

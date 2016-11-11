@@ -4,13 +4,14 @@ import logging
 
 import numpy as np
 
-from keras.models import Sequential, load_model
+from keras.models import Sequential
 from keras.layers import Embedding
 
 from gensim.models import Word2Vec
 from seq2seq.models import AttentionSeq2Seq
 
-from data_utils import pad_and_bucket, prepare_custom_data, START_VOCAB
+from data_utils import prepare_custom_data, BatchGenerator, START_VOCAB, \
+    generate_sequences
 
 logging.getLogger().setLevel('INFO')
 
@@ -22,7 +23,7 @@ VOCABULARY_SIZE = 40000 + len(START_VOCAB)
 LAYER_SIZE = 256
 MAX_LAYERS = 3
 MAX_GRADIENT_NORM = 5.0
-BATCH_SIZE = 1
+BATCH_SIZE = 8
 LEARNING_RATE = 9.0
 LEARNING_RATE_DECAY_FACTOR = 0.01
 FORWARD_ONLY = False
@@ -42,7 +43,12 @@ WORD2VEC_MODEL_PATH = path.join(
 )
 
 
-def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matrix, mode='train'):
+def create_model(
+    in_encoder_vocabulary,
+    in_decoder_vocabulary,
+    in_embedding_matrix,
+    mode='train'
+):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
     embedding_layer = Embedding(
         len(in_encoder_vocabulary) + 1,
@@ -66,7 +72,7 @@ def create_model(in_encoder_vocabulary, in_decoder_vocabulary, in_embedding_matr
     model = Sequential()
     model.add(embedding_layer)
     model.add(seq2seq_model)
-    model.compile(loss='mse', optimizer='adam')
+    model.compile(loss='mse', optimizer='sgd')
     return model
 
 
@@ -82,8 +88,7 @@ def prepare_data():
         path.join(DATASET_DIR, 'test.enc'),
         path.join(DATASET_DIR, 'test.dec'),
         WORD2VEC_MODEL_PATH,
-        path.join(DATASET_DIR, 'embeddings.npy'),
-        BUCKETS
+        path.join(DATASET_DIR, 'embeddings.npy')
     )
 
 
@@ -111,50 +116,6 @@ def train(train_set, dev_set):
     encoder_inputs, decoder_inputs, target_weights = model.get_batch(train_set, bucket_id)
     model.fit(encoder_inputs, decoder_inputs)
     return model
-
-    with tf.Session(config=config) as sess:
-
-
-        # This is the training loop.
-        step_time, loss = 0.0, 0.0
-        current_step = 0
-        previous_losses = []
-        while True:
-
-          start_time = time.time()
-          _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                       target_weights, bucket_id, False)
-          step_time += (time.time() - start_time) / gConfig['steps_per_checkpoint']
-          loss += step_loss / gConfig['steps_per_checkpoint']
-          current_step += 1
-
-          # Once in a while, we save checkpoint, print statistics, and run evals.
-          if current_step % gConfig['steps_per_checkpoint'] == 0:
-            # Print statistics for the previous epoch.
-            perplexity = math.exp(loss) if loss < 300 else float('inf')
-            print ("global step %d learning rate %.4f step-time %.2f perplexity "
-                   "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
-                             step_time, perplexity))
-            # Decrease learning rate if no improvement was seen over last 3 times.
-            if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
-              sess.run(model.learning_rate_decay_op)
-            previous_losses.append(loss)
-            # Save checkpoint and zero timer and loss.
-            checkpoint_path = path.join(gConfig['working_directory'], "seq2seq.ckpt")
-            model.saver.save(sess, checkpoint_path, global_step=model.global_step)
-            step_time, loss = 0.0, 0.0
-            # Run evals on development set and print their perplexity.
-            for bucket_id in xrange(len(_buckets)):
-              if len(dev_set[bucket_id]) == 0:
-                print("  eval: empty bucket %d" % (bucket_id))
-                continue
-              encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-                  dev_set, bucket_id)
-              _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                           target_weights, bucket_id, True)
-              eval_ppx = math.exp(eval_loss) if eval_loss < 300 else float('inf')
-              print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
-            sys.stdout.flush()
 
 
 def decode():
@@ -238,7 +199,6 @@ def decode_line(model, enc_vocab, in_embeddings, sentence):
 def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
     
     result = ' '.join([
-    
         in_w2v.similar_by_vector(in_decoder_outputs[vector_index])[0][0]
         for vector_index in xrange(in_decoder_outputs.shape[0])
     ])
@@ -247,15 +207,16 @@ def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
 
 def main(in_command):
     MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
-    vocab, rev_vocab, embeddings, train_set, dev_set = prepare_data()
+    vocab, rev_vocab, embeddings, enc_train_ids_path, dec_train_ids_path, enc_dev_ids_path, dec_dev_ids_path = prepare_data()
     if in_command == 'train':
         model = create_model(vocab, vocab, embeddings)
-        model.fit(
-            train_set[BUCKETS[1]]['inputs'],
-            train_set[BUCKETS[1]]['outputs'],
-            batch_size=16,
-            nb_epoch=1
+        train_batch_generator = BatchGenerator(
+            enc_train_ids_path,
+            dec_train_ids_path,
+            1,
+            len(vocab), BUCKETS[1]
         )
+        model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
         model.save_weights(MODEL_FILE, overwrite=True)
         del model
         model = create_model(vocab, vocab, embeddings, mode='test')
