@@ -10,7 +10,8 @@ from keras.layers import Embedding
 from gensim.models import Word2Vec
 from seq2seq.models import AttentionSeq2Seq
 
-from data_utils import prepare_custom_data, BatchGenerator, START_VOCAB, generate_sequences
+from data_utils import prepare_custom_data, START_VOCAB
+from batch_generator import BatchGenerator, generate_sequences
 
 logging.getLogger().setLevel('INFO')
 
@@ -52,18 +53,15 @@ def create_model(
     embedding_layer = Embedding(
         effective_vocabulary_size,
         embedding_size,
-        batch_input_shape=(BATCH_SIZE, BUCKETS[1][0]),
         weights=[in_embedding_matrix],
         input_length=BUCKETS[1][0],
         trainable=True,
-        name='emb',
-        mask_zero=True
+        name='emb'
     )
     seq2seq_model = AttentionSeq2Seq(
         bidirectional=False,
-        batch_input_shape=(BATCH_SIZE, BUCKETS[1][0], embedding_size),
         input_dim=embedding_size,
-        output_dim=embedding_size,
+        output_dim=len(in_decoder_vocabulary),
         hidden_dim=32,
         output_length=BUCKETS[1][1],
         depth=1,
@@ -113,7 +111,10 @@ def train(train_set, dev_set):
         if random_number_01 < train_buckets_scale[i]
     ])
     # Get a batch and make a step
-    encoder_inputs, decoder_inputs, target_weights = model.get_batch(train_set, bucket_id)
+    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
+        train_set,
+        bucket_id
+    )
     model.fit(encoder_inputs, decoder_inputs)
     return model
 
@@ -206,7 +207,15 @@ def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
 
 def main(in_command):
     MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
-    vocab, rev_vocab, embeddings, enc_train_ids_path, dec_train_ids_path, enc_dev_ids_path, dec_dev_ids_path = prepare_data()
+    (
+        vocab,
+        rev_vocab,
+        embeddings,
+        enc_train_ids_path,
+        dec_train_ids_path,
+        enc_dev_ids_path,
+        dec_dev_ids_path
+    ) = prepare_data()
     if in_command == 'train':
         model = create_model(vocab, vocab, embeddings)
         train_batch_generator = BatchGenerator(
@@ -216,12 +225,12 @@ def main(in_command):
             len(vocab), BUCKETS[1]
         )
         # import pdb; pdb.set_trace()
-        X, y = train_batch_generator.generate_batch()
-        # import pdb; pdb.set_trace()
-        model.fit(
-            np.asarray(X),
-            np.asarray(y),
-            nb_epoch=2
+        # X, y = train_batch_generator.generate_batch()
+        import pdb; pdb.set_trace()
+        model.fit_generator(
+            generate_sequences(train_batch_generator),
+            nb_epoch=2,
+            samples_per_epoch=32
         )
         # model.train_on_batch(X, y)
         # model.fit_generator(generate_sequences(train_batch_generator), 100, 2)

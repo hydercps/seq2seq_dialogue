@@ -28,81 +28,6 @@ WORD_SPLIT = re.compile(b"([.,!?\"':;)(])")
 DIGIT_RE = re.compile(br"\d")
 
 
-# Generating a batch of sequences for the specific bucket
-class BatchGenerator(object):
-    def __init__(
-        self,
-        in_enc_filename,
-        in_dec_filename,
-        in_batch_size,
-        in_vocabulary_size,
-        in_bucket,
-        in_embeddings=None
-    ):
-        self.encoder_src = open(in_enc_filename)
-        self.decoder_src = open(in_dec_filename)
-        self.batch_size = in_batch_size
-        self.vocabulary_size = in_vocabulary_size
-        self.embeddings = in_embeddings
-        self.bucket = in_bucket
-
-    def generate_batch(self):
-        x_list, y_list = [], []
-        while len(x_list) < self.batch_size:
-            encoder_line = self.encoder_src.readline()
-            decoder_line = self.decoder_src.readline()
-            if not encoder_line or not decoder_line:
-                self.__reload_sources()
-                continue
-            encoder_input = map(int, encoder_line.split())
-            decoder_input = map(int, decoder_line.split())
-            if (
-                len(encoder_input) < self.bucket[0] and
-                len(decoder_input) < self.bucket[1]
-            ):
-                x_list.append(encoder_input)
-                y_list.append(decoder_input)
-        # it's a full batch or nothing at all
-        if len(x_list) < self.batch_size:
-            raise RuntimeError('File contents insufficient for a batch')
-
-        X = [
-            self.sequence_to_vector(sequence, self.bucket[0])
-            for sequence in x_list
-        ]
-        y = [
-            self.sequence_to_vector(sequence, self.bucket[1])
-            for sequence in y_list
-        ]
-        return X, y
-
-    def sequence_to_vector(self, in_sequence, in_max_sequence_length, to_onehot=False):
-        sequence_padded = pad_sequences(
-            [in_sequence],
-            maxlen=in_max_sequence_length,
-            padding='post',
-            dtype='int32',
-            value=PAD_ID
-        )[0]
-        if self.embeddings:
-            sequence_padded = ids_to_embeddings(
-                sequence_padded,
-                self.embeddings
-            )
-        elif to_onehot:
-            sequence_padded = ids_to_onehots()
-        return np.asarray(sequence_padded)
-
-    def __reload_sources(self):
-        self.encoder_src.seek(0, 0)
-        self.decoder_src.seek(0, 0)
-
-
-def generate_sequences(in_batch_generator):
-    while True:
-        yield in_batch_generator.generate_batch()
-
-
 def find_bucket_for_specific_lengths(in_src_length, in_tgt_length, in_buckets):
     for bucket_index, (source_size, target_size) in enumerate(in_buckets):
         if in_src_length < source_size and in_tgt_length < target_size:
@@ -365,16 +290,14 @@ def pad_and_bucket(source_path, target_path, buckets, max_size=None):
     return data_set
 
 
-def ids_to_one_hots(in_ids_bucket, in_vocabulary_size):
-    if not len(in_ids_bucket):
+def ids_to_one_hots(in_ids_list, in_vocabulary_size):
+    if not len(in_ids_list):
         return None
-    result = np.zeros(
-        (len(in_ids_bucket), len(in_ids_bucket[0]), in_vocabulary_size + 1), 
-        dtype=np.int32
-    )
-    for sequence_id, sequence in enumerate(in_ids_bucket):
-        for id_index, token_id in enumerate(sequence):
-            result[sequence_id][id_index][token_id] = 1
+    result = []
+    for token_index, token_id in enumerate(in_ids_list):
+        token_array = np.zeros((in_vocabulary_size), dtype=np.int32)
+        token_array[token_id] = 1
+        result.append(token_array)
     return result
 
 
