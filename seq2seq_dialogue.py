@@ -10,8 +10,7 @@ from keras.layers import Embedding
 from gensim.models import Word2Vec
 from seq2seq.models import AttentionSeq2Seq
 
-from data_utils import prepare_custom_data, BatchGenerator, START_VOCAB, \
-    generate_sequences
+from data_utils import prepare_custom_data, BatchGenerator, START_VOCAB, generate_sequences
 
 logging.getLogger().setLevel('INFO')
 
@@ -51,8 +50,9 @@ def create_model(
 ):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
     embedding_layer = Embedding(
-        len(in_encoder_vocabulary) + 1,
+        effective_vocabulary_size,
         embedding_size,
+        batch_input_shape=(BATCH_SIZE, BUCKETS[1][0]),
         weights=[in_embedding_matrix],
         input_length=BUCKETS[1][0],
         trainable=True,
@@ -61,8 +61,8 @@ def create_model(
     )
     seq2seq_model = AttentionSeq2Seq(
         bidirectional=False,
+        batch_input_shape=(BATCH_SIZE, BUCKETS[1][0], embedding_size),
         input_dim=embedding_size,
-        input_length=BUCKETS[1][0],
         output_dim=embedding_size,
         hidden_dim=32,
         output_length=BUCKETS[1][1],
@@ -197,7 +197,6 @@ def decode_line(model, enc_vocab, in_embeddings, sentence):
 
 
 def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
-    
     result = ' '.join([
         in_w2v.similar_by_vector(in_decoder_outputs[vector_index])[0][0]
         for vector_index in xrange(in_decoder_outputs.shape[0])
@@ -213,10 +212,19 @@ def main(in_command):
         train_batch_generator = BatchGenerator(
             enc_train_ids_path,
             dec_train_ids_path,
-            1,
+            BATCH_SIZE,
             len(vocab), BUCKETS[1]
         )
-        model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
+        # import pdb; pdb.set_trace()
+        X, y = train_batch_generator.generate_batch()
+        # import pdb; pdb.set_trace()
+        model.fit(
+            np.asarray(X),
+            np.asarray(y),
+            nb_epoch=2
+        )
+        # model.train_on_batch(X, y)
+        # model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
         model.save_weights(MODEL_FILE, overwrite=True)
         del model
         model = create_model(vocab, vocab, embeddings, mode='test')
@@ -242,3 +250,4 @@ if __name__ == '__main__':
         exit()
     command = argv[1].lower()
     main(command)
+

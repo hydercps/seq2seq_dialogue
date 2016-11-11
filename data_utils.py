@@ -76,7 +76,7 @@ class BatchGenerator(object):
         ]
         return X, y
 
-    def sequence_to_vector(self, in_sequence, in_max_sequence_length):
+    def sequence_to_vector(self, in_sequence, in_max_sequence_length, to_onehot=False):
         sequence_padded = pad_sequences(
             [in_sequence],
             maxlen=in_max_sequence_length,
@@ -89,6 +89,8 @@ class BatchGenerator(object):
                 sequence_padded,
                 self.embeddings
             )
+        elif to_onehot:
+            sequence_padded = ids_to_onehots()
         return np.asarray(sequence_padded)
 
     def __reload_sources(self):
@@ -222,8 +224,7 @@ def prepare_data_helper():
             train_set[bucket]['inputs'],
             dtype=np.int32
         )
-        dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'],
-                                               dtype=np.int32)
+        dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'], dtype=np.int32)
         if mode == 'emb_to_emb':
             train_set[bucket]['outputs'] = ids_to_embeddings(
                 train_set[bucket]['outputs'],
