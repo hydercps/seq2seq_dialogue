@@ -6,6 +6,7 @@ import numpy as np
 
 from keras.models import Sequential
 from keras.layers import Embedding
+from keras.layers.core import Activation
 
 from gensim.models import Word2Vec
 from seq2seq.models import AttentionSeq2Seq
@@ -70,7 +71,8 @@ def create_model(
     model = Sequential()
     model.add(embedding_layer)
     model.add(seq2seq_model)
-    model.compile(loss='mse', optimizer='sgd')
+    model.add(Activation('softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam')
     return model
 
 
@@ -226,7 +228,7 @@ def main(in_command):
         )
         # import pdb; pdb.set_trace()
         # X, y = train_batch_generator.generate_batch()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         model.fit_generator(
             generate_sequences(train_batch_generator),
             nb_epoch=2,
