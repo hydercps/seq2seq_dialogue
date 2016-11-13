@@ -8,7 +8,6 @@ from collections import defaultdict
 import numpy as np
 
 from keras.preprocessing.sequence import pad_sequences
-from gensim.models import Word2Vec
 
 logger = logging.getLogger()
 
@@ -49,43 +48,6 @@ def basic_tokenizer(sentence):
     for space_separated_fragment in sentence.strip().split():
         words.extend(re.split(WORD_SPLIT, space_separated_fragment))
     return [w for w in words if w]
-
-
-'''
-def create_vocabulary_old(
-    vocabulary_path,
-    data_paths,
-    max_vocabulary_size,
-    tokenizer=None,
-    normalize_digits=True
-):
-    if not path.exists(vocabulary_path):
-        print 'Creating vocabulary {}'.format(vocabulary_path)
-        vocab = {}
-        for data_path in data_paths:
-            with open(data_path, mode="rb") as f:
-                counter = 0
-                for line in f:
-                    counter += 1
-                    if counter % 100000 == 0:
-                        print("  processing line %d" % counter)
-                    tokens = tokenizer(line) if tokenizer else basic_tokenizer(line)
-                    for w in tokens:
-                        word = re.sub(DIGIT_RE, b"0", w) if normalize_digits else w
-                        if word in vocab:
-                            vocab[word] += 1
-                        else:
-                            vocab[word] = 1
-                vocab_list = START_VOCAB + sorted(vocab, key=vocab.get, reverse=True)
-                print '>> Full Vocabulary Size :',len(vocab_list)
-                if max_vocabulary_size < len(vocab_list):
-                    vocab_list = vocab_list[:max_vocabulary_size]
-        with open(vocabulary_path, mode="wb") as vocab_file:
-            for w in vocab_list:
-                vocab_file.write(w + b"\n")
-    else:
-        print 'Vocabulary exists - skipping the creating step'
-'''
 
 
 def create_vocabulary(in_data, in_max_size, normalize_digits=True):
@@ -151,97 +113,6 @@ def data_to_token_ids(
                     normalize_digits
                 )
                 tokens_file.write(" ".join([str(tok) for tok in token_ids]) + "\n")
-
-
-def prepare_data_helper():
-    train_set = pad_and_bucket(
-        enc_train_ids_path,
-        dec_train_ids_path,
-        in_buckets
-    )
-    dev_set = pad_and_bucket(
-        enc_dev_ids_path,
-        dec_dev_ids_path,
-        in_buckets
-    )
-    for bucket in train_set:
-        train_set[bucket]['inputs'] = np.asarray(
-            train_set[bucket]['inputs'],
-            dtype=np.int32
-        )
-        dev_set[bucket]['inputs'] = np.asarray(dev_set[bucket]['inputs'], dtype=np.int32)
-        if mode == 'emb_to_emb':
-            train_set[bucket]['outputs'] = ids_to_embeddings(
-                train_set[bucket]['outputs'],
-                embeddings
-            )
-            dev_set[bucket]['outputs'] = ids_to_embeddings(
-                dev_set[bucket]['outputs'],
-                embeddings
-            )
-        elif mode == 'emb_to_1hot':
-            train_set[bucket]['outputs'] = ids_to_one_hots(
-                train_set[bucket]['outputs'],
-                len(vocab)
-            )
-            dev_set[bucket]['outputs'] = ids_to_one_hots(
-                dev_set[bucket]['outputs'],
-                len(vocab)
-            )
-
-
-def prepare_custom_data(
-    working_directory,
-    train_enc,
-    train_dec,
-    test_enc,
-    test_dec,
-    w2v_model_path,
-    embeddings_path,
-    tokenizer=None
-):
-    max_vocabulary_size = 100000
-    # vocabulary is shared between the encoder and decoder
-    vocab_path = path.join(working_directory, 'vocab')
-    create_vocabulary(
-        vocab_path,
-        [train_enc, train_dec, test_enc, test_dec],
-        max_vocabulary_size,
-        tokenizer
-    )
-    vocab, rev_vocab = initialize_vocabulary(vocab_path)
-
-    if not path.exists(embeddings_path):
-        logger.info('Building embeddings matrix for encoder vocabulary')
-        embeddings = build_embedding_matrix(
-            Word2Vec.load_word2vec_format(w2v_model_path, binary=True)
-        )
-        with open(embeddings_path, 'wb') as embeddings_out:
-            np.save(embeddings_out, embeddings)
-    else:
-        embeddings = np.load(embeddings_path)
-
-    # Create token ids for the training data.
-    enc_train_ids_path = train_enc + '.ids'
-    dec_train_ids_path = train_dec + '.ids'
-    data_to_token_ids(train_enc, enc_train_ids_path, vocab_path, tokenizer)
-    data_to_token_ids(train_dec, dec_train_ids_path, vocab_path, tokenizer)
-
-    # Create token ids for the development data.
-    enc_dev_ids_path = test_enc + '.ids'
-    dec_dev_ids_path = test_dec + '.ids'
-    data_to_token_ids(test_enc, enc_dev_ids_path, vocab_path, tokenizer)
-    data_to_token_ids(test_dec, dec_dev_ids_path, vocab_path, tokenizer)
-
-    return (
-        vocab,
-        rev_vocab,
-        embeddings,
-        enc_train_ids_path,
-        dec_train_ids_path,
-        enc_dev_ids_path,
-        dec_dev_ids_path
-    )
 
 
 def pad_and_bucket(source_path, target_path, buckets, max_size=None):
@@ -340,7 +211,7 @@ def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):
             (len(in_base_vocabulary) + 1, EMBEDDING_DIM),
             dtype=np.float32
         )
-        for word, word_index in in_base_vocabulary.iteritems():
+        for word_index, word in enumerate(in_base_vocabulary):
             if word in in_w2v_model:
                 # words not found in embedding index will be all-zeros.
                 result[word_index] = in_w2v_model[word]

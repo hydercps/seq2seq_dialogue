@@ -1,0 +1,13 @@
+{
+  "train_set": "dataset/train.csv",
+  "test_set": "dataset/test.csv",
+  "vocabulary": "dataset/vocab.txt",
+  "model_weights": "model/weights.h5",
+  "word2vec_model": "../word2vec_google_news/GoogleNews-vectors-negative300.bin",
+  "embeddings_matrix": "dataset/embeddings.npy",
+  "buckets": [[5, 10], [10, 15], [20, 25], [40, 50]],
+  "layer_size": 256,
+  "max_layers": 3,
+  "max_gradient_norm": 5.0,
+  "batch_size": 8
+}

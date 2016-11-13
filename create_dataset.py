@@ -3,9 +3,11 @@ import logging
 from os import path, makedirs
 from codecs import getreader, getwriter
 
+from gensim.models import Word2Vec
 from pandas import read_csv
+import numpy as np
 
-from data_utils import create_vocabulary, UNK
+from data_utils import create_vocabulary, build_embedding_matrix, UNK
 
 logger = logging.getLogger()
 
@@ -63,6 +65,17 @@ def main(in_dataset, in_result_folder):
         )
     else:
         logger.info('Skipping dataset creating step')
+    embeddings_file = path.join(in_result_folder, 'embeddings.npy')
+    if not path.exists(embeddings_file):
+        w2v = Word2Vec.load_word2vec_format(
+            '../word2vec_google_news/GoogleNews-vectors-negative300.bin',
+            binary=True
+        )
+        embedding_matrix = build_embedding_matrix(w2v, vocabulary)
+        with open(embeddings_file, 'wb') as embeddings_out:
+            np.save(embeddings_out, embedding_matrix)
+    else:
+        logger.info('Skipping embeddings creating step')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,8 @@
-from os import getcwd, path, makedirs
+from codecs import getreader
+from os import makedirs, path
 from sys import argv
 import logging
+from json import load
 
 import numpy as np
 
@@ -9,45 +11,22 @@ from keras.layers import Embedding
 from keras.layers.core import Activation
 
 from gensim.models import Word2Vec
-from seq2seq.models import AttentionSeq2Seq
 
-from data_utils import prepare_custom_data, START_VOCAB
+from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
 
 logging.getLogger().setLevel('INFO')
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-BUCKETS = [(5, 10), (10, 15), (20, 25), (40, 50)]
-
-VOCABULARY_SIZE = 40000 + len(START_VOCAB)
-LAYER_SIZE = 256
-MAX_LAYERS = 3
-MAX_GRADIENT_NORM = 5.0
-BATCH_SIZE = 8
-LEARNING_RATE = 9.0
-LEARNING_RATE_DECAY_FACTOR = 0.01
-FORWARD_ONLY = False
-
-DATASET_DIR = path.join(
-    getcwd(),
-    '..',
-    'opensubtitles_tools',
-    'opensubtitles_seq2seq_dataset'
-)
-WORKING_DIR = path.join(getcwd(), 'result')
-WORD2VEC_MODEL_PATH = path.join(
-    getcwd(),
-    '..',
-    'word2vec_google_news',
-    'GoogleNews-vectors-negative300.bin'
-)
 
 
 def create_model(
     in_encoder_vocabulary,
     in_decoder_vocabulary,
     in_embedding_matrix,
+    in_input_length,
+    in_output_length,
     mode='train'
 ):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
@@ -55,7 +34,7 @@ def create_model(
         effective_vocabulary_size,
         embedding_size,
         weights=[in_embedding_matrix],
-        input_length=BUCKETS[1][0],
+        input_length=in_input_length,
         trainable=True,
         name='emb'
     )
@@ -64,7 +43,7 @@ def create_model(
         input_dim=embedding_size,
         output_dim=len(in_decoder_vocabulary),
         hidden_dim=32,
-        output_length=BUCKETS[1][1],
+        output_length=in_output_length,
         depth=1,
         dropout=0.0 if mode == 'test' else 0.2
     )
@@ -74,22 +53,6 @@ def create_model(
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam')
     return model
-
-
-def prepare_data():
-    # prepare dataset
-    logging.info('Preparing data')
-    if not path.exists(WORKING_DIR):
-        makedirs(WORKING_DIR)
-    return prepare_custom_data(
-        WORKING_DIR,
-        path.join(DATASET_DIR, 'train.enc'),
-        path.join(DATASET_DIR, 'train.dec'),
-        path.join(DATASET_DIR, 'test.enc'),
-        path.join(DATASET_DIR, 'test.dec'),
-        WORD2VEC_MODEL_PATH,
-        path.join(DATASET_DIR, 'embeddings.npy')
-    )
 
 
 def train(train_set, dev_set):
@@ -207,24 +170,28 @@ def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
     return result
 
 
-def main(in_command):
-    MODEL_FILE = path.join(WORKING_DIR, 'model.h5')
-    (
-        vocab,
-        rev_vocab,
-        embeddings,
-        enc_train_ids_path,
-        dec_train_ids_path,
-        enc_dev_ids_path,
-        dec_dev_ids_path
-    ) = prepare_data()
-    if in_command == 'train':
-        model = create_model(vocab, vocab, embeddings)
+def main(in_mode, in_config):
+    MODEL_FILE = in_config['model_weights']
+    MODEL_DIR = path.dirname(MODEL_FILE)
+    if not path.exists(MODEL_DIR):
+        makedirs(MODEL_DIR)
+    with getreader('utf-8')(open(in_config['vocabulary'])) as vocab_in:
+        VOCAB = [line.strip() for line in vocab_in]
+    EMBEDDINGS = np.load(in_config['embeddings_matrix'])
+    BUCKETS = in_config['buckets']
+    if in_mode == 'train':
+        model = create_model(
+            VOCAB,
+            VOCAB,
+            EMBEDDINGS,
+            BUCKETS[1][0],
+            BUCKETS[1][1]
+        )
         train_batch_generator = BatchGenerator(
-            enc_train_ids_path,
-            dec_train_ids_path,
-            BATCH_SIZE,
-            len(vocab), BUCKETS[1]
+            in_config['train_set'],
+            in_config['batch_size'],
+            VOCAB,
+            BUCKETS[1]
         )
         # import pdb; pdb.set_trace()
         # X, y = train_batch_generator.generate_batch()
@@ -238,15 +205,15 @@ def main(in_command):
         # model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
         model.save_weights(MODEL_FILE, overwrite=True)
         del model
-        model = create_model(vocab, vocab, embeddings, mode='test')
+        model = create_model(VOCAB, VOCAB, EMBEDDINGS, mode='test')
         model.load_weights(MODEL_FILE)
-        print model.evaluate(
-            dev_set[BUCKETS[1]]['inputs'],
-            dev_set[BUCKETS[1]]['outputs'],
-            batch_size=16,
-            verbose=True
-        )
-    if in_command == 'test':
+        # print model.evaluate(
+        #     dev_set[BUCKETS[1]]['inputs'],
+        #    dev_set[BUCKETS[1]]['outputs'],
+        #    batch_size=16,
+        #    verbose=True
+        #)
+    if in_mode == 'test':
         model = create_model(vocab, vocab, embeddings, mode='test')
         model.load_weights(MODEL_FILE)
         w2v = Word2Vec.load_word2vec_format(WORD2VEC_MODEL_PATH, binary=True)
@@ -256,9 +223,11 @@ def main(in_command):
 
 
 if __name__ == '__main__':
-    if len(argv) < 2:
-        print 'Usage: seq2seq_dialogue.py <train|test>'
+    if len(argv) < 3:
+        print 'Usage: seq2seq_dialogue.py <train/test> <config file>'
         exit()
-    command = argv[1].lower()
-    main(command)
+    mode, config_file = argv[1:3]
+    with getreader('utf-8')(open(config_file)) as config_in:
+        config = load(config_in)
+    main(mode, config)
 
