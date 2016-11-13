@@ -3,6 +3,7 @@
 from os import path
 import re
 import logging
+from collections import defaultdict
 
 import numpy as np
 
@@ -50,7 +51,8 @@ def basic_tokenizer(sentence):
     return [w for w in words if w]
 
 
-def create_vocabulary(
+'''
+def create_vocabulary_old(
     vocabulary_path,
     data_paths,
     max_vocabulary_size,
@@ -83,6 +85,19 @@ def create_vocabulary(
                 vocab_file.write(w + b"\n")
     else:
         print 'Vocabulary exists - skipping the creating step'
+'''
+
+
+def create_vocabulary(in_data, in_max_size, normalize_digits=True):
+    vocab = defaultdict(lambda: 0)
+    for line in in_data:
+        for token in line.split():
+            word = re.sub(DIGIT_RE, b"0", token) if normalize_digits else token
+            vocab[word] += 1
+    vocab_list = START_VOCAB + sorted(vocab, key=vocab.get, reverse=True)
+    logger.info('Untruncated vocabulary size : {}'.format(len(vocab_list)))
+    vocab_list = vocab_list[:in_max_size]
+    return vocab_list
 
 
 def initialize_vocabulary(vocabulary_path):
@@ -97,7 +112,12 @@ def initialize_vocabulary(vocabulary_path):
         raise ValueError("Vocabulary file %s not found.", vocabulary_path)
 
 
-def sentence_to_token_ids(sentence, vocabulary, tokenizer=None, normalize_digits=True):
+def sentence_to_token_ids(
+    sentence,
+    vocabulary,
+    tokenizer=None,
+    normalize_digits=True
+):
     if tokenizer:
         words = tokenizer(sentence)
     else:

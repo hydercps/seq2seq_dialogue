@@ -1,7 +1,6 @@
 from os import path
 
-from data_utils import generate_sequences
-from batch_generator import BatchGenerator
+from batch_generator import BatchGenerator, generate_sequences
 from seq2seq_dialogue import WORKING_DIR, BUCKETS, prepare_data
 
 
