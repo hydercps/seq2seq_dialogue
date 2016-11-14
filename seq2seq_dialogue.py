@@ -198,8 +198,8 @@ def main(in_mode, in_config):
         # import pdb; pdb.set_trace()
         model.fit_generator(
             generate_sequences(train_batch_generator),
-            nb_epoch=2,
-            samples_per_epoch=32
+            nb_epoch=in_config['nb_epoch'],
+            samples_per_epoch=in_config['samples_per_epoch']
         )
         # model.train_on_batch(X, y)
         # model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
