@@ -10,6 +10,6 @@
   "max_layers": 3,
   "max_gradient_norm": 5.0,
   "batch_size": 8,
-  "nb_epoch": 100,
+  "nb_epoch": 10,
   "samples_per_epoch": 500000
 }
