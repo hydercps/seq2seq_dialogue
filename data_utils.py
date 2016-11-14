@@ -28,10 +28,31 @@ WORD_SPLIT = re.compile(b"([.,!?\"':;)(])")
 DIGIT_RE = re.compile(br"\d")
 
 
-def find_bucket_for_specific_lengths(in_src_length, in_tgt_length, in_buckets):
+def find_bucket(in_src_length, in_tgt_length, in_buckets):
     for bucket_index, (source_size, target_size) in enumerate(in_buckets):
         if in_src_length < source_size and in_tgt_length < target_size:
             return bucket_index
+
+
+def pad_sequence(
+    in_sequence,
+    in_pad_length,
+    in_reverse_vocabulary=None,
+    to_onehot=False
+):
+    sequence_padded = pad_sequences(
+        [in_sequence],
+        maxlen=in_pad_length,
+        padding='post',
+        dtype='int32',
+        value=PAD_ID
+    )[0]
+    if to_onehot:
+        sequence_padded = ids_to_one_hots(
+            sequence_padded,
+            len(in_reverse_vocabulary)
+        )
+    return sequence_padded
 
 
 def get_special_token_vector(in_token_id, in_embedding_size):

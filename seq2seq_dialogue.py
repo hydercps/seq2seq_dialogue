@@ -5,12 +5,11 @@ import logging
 from json import load
 
 import numpy as np
+from keras.callbacks import ModelCheckpoint
 
 from keras.models import Sequential
 from keras.layers import Embedding
 from keras.layers.core import Activation
-
-from gensim.models import Word2Vec
 
 from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
@@ -55,7 +54,8 @@ def create_model(
     return model
 
 
-def train(train_set, dev_set):
+'''
+def train_old(train_set, dev_set):
     train_bucket_sizes = [len(train_set[b]) for b in xrange(len(BUCKETS))]
     train_total_size = float(sum(train_bucket_sizes))
 
@@ -82,6 +82,7 @@ def train(train_set, dev_set):
     )
     model.fit(encoder_inputs, decoder_inputs)
     return model
+'''
 
 
 def decode():
@@ -170,6 +171,73 @@ def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
     return result
 
 
+def train(in_vocabulary, in_embeddings, in_config):
+    logging.info('Training the model')
+    model = create_model(
+        in_vocabulary,
+        in_vocabulary,
+        in_embeddings,
+        in_config['buckets'][1][0],
+        in_config['buckets'][1][1]
+    )
+    bucket = 1
+    encoder_input_file = path.join(
+        in_config['data_folder'],
+        'train_encoder_{}.npy'.format(bucket)
+    )
+    decoder_input_file = path.join(
+        in_config['data_folder'],
+        'train_decoder_{}.npy'.format(bucket)
+    )
+    train_batch_generator = BatchGenerator(
+        encoder_input_file,
+        decoder_input_file,
+        in_config['batch_size'],
+        in_vocabulary,
+        in_config['buckets'][bucket]
+    )
+    MODEL_FILE = in_config['model_weights']
+    save_callback = ModelCheckpoint(
+        MODEL_FILE,
+        monitor='val_loss',
+        verbose=1,
+        save_best_only=True,
+        save_weights_only=True,
+        mode='auto'
+    )
+    model.fit_generator(
+        generate_sequences(train_batch_generator),
+        nb_epoch=in_config['nb_epoch'],
+        samples_per_epoch=in_config['samples_per_epoch'],
+        callbacks=[save_callback]
+    )
+    evaluate(in_vocabulary, in_embeddings, in_config)
+
+
+def evaluate(in_vocabulary, in_embeddings, in_config):
+    logging.info('Evaluating the trained model')
+    model = create_model(
+        in_vocabulary,
+        in_vocabulary,
+        in_embeddings,
+        in_config['buckets'][1][0],
+        in_config['buckets'][1][1],
+        mode='test'
+    )
+    MODEL_FILE = in_config['model_weights']
+    model.load_weights(MODEL_FILE)
+    test_batch_generator = BatchGenerator(
+        in_config['test_set'],
+        1,
+        in_vocabulary,
+        in_config['buckets'][1]
+    )
+    print model.evaluate_generator(
+        test_batch_generator,
+        test_batch_generator.get_dataset_size()
+    )
+
+
 def main(in_mode, in_config):
     MODEL_FILE = in_config['model_weights']
     MODEL_DIR = path.dirname(MODEL_FILE)
@@ -178,48 +246,10 @@ def main(in_mode, in_config):
     with getreader('utf-8')(open(in_config['vocabulary'])) as vocab_in:
         VOCAB = [line.strip() for line in vocab_in]
     EMBEDDINGS = np.load(in_config['embeddings_matrix'])
-    BUCKETS = in_config['buckets']
     if in_mode == 'train':
-        model = create_model(
-            VOCAB,
-            VOCAB,
-            EMBEDDINGS,
-            BUCKETS[1][0],
-            BUCKETS[1][1]
-        )
-        train_batch_generator = BatchGenerator(
-            in_config['train_set'],
-            in_config['batch_size'],
-            VOCAB,
-            BUCKETS[1]
-        )
-        # import pdb; pdb.set_trace()
-        # X, y = train_batch_generator.generate_batch()
-        # import pdb; pdb.set_trace()
-        model.fit_generator(
-            generate_sequences(train_batch_generator),
-            nb_epoch=in_config['nb_epoch'],
-            samples_per_epoch=in_config['samples_per_epoch']
-        )
-        # model.train_on_batch(X, y)
-        # model.fit_generator(generate_sequences(train_batch_generator), 100, 2)
-        model.save_weights(MODEL_FILE, overwrite=True)
-        del model
-        model = create_model(VOCAB, VOCAB, EMBEDDINGS, mode='test')
-        model.load_weights(MODEL_FILE)
-        # print model.evaluate(
-        #     dev_set[BUCKETS[1]]['inputs'],
-        #    dev_set[BUCKETS[1]]['outputs'],
-        #    batch_size=16,
-        #    verbose=True
-        #)
+        train(VOCAB, EMBEDDINGS, in_config)
     if in_mode == 'test':
-        model = create_model(vocab, vocab, embeddings, mode='test')
-        model.load_weights(MODEL_FILE)
-        w2v = Word2Vec.load_word2vec_format(WORD2VEC_MODEL_PATH, binary=True)
-        predictions = model.predict(dev_set[BUCKETS[1]]['inputs'])
-        for vector_index in xrange(predictions.shape[0]):
-            print visualize_decoded(vocab, w2v, predictions[vector_index])
+        evaluate(VOCAB, EMBEDDINGS, in_config)
 
 
 if __name__ == '__main__':

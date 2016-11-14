@@ -1,6 +1,5 @@
 {
-  "train_set": "dataset/train.csv",
-  "test_set": "dataset/test.csv",
+  "data_folder": "dataset",
   "vocabulary": "dataset/vocab.txt",
   "model_weights": "model/weights.h5",
   "word2vec_model": "../word2vec_google_news/GoogleNews-vectors-negative300.bin",
@@ -11,5 +10,5 @@
   "max_gradient_norm": 5.0,
   "batch_size": 8,
   "nb_epoch": 10,
-  "samples_per_epoch": 500000
+  "samples_per_epoch": 100000
 }
