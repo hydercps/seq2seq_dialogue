@@ -1,11 +1,11 @@
 from itertools import count
 from sys import argv
-import logging
+from logging import getLogger
 from os import path, makedirs
 from codecs import getreader, getwriter
 
 from gensim.models import Word2Vec
-from pandas import read_csv, DataFrame
+from pandas import read_csv
 import numpy as np
 from json import load
 
@@ -17,7 +17,8 @@ from data_utils import (
     pad_sequence
 )
 
-logger = logging.getLogger()
+logger = getLogger()
+logger.setLevel('INFO')
 
 TESTSET_RATIO = 0.2
 MAX_VOCABULARY_SIZE = 70000
@@ -28,6 +29,7 @@ def main(in_dataset, in_result_folder, in_config):
         makedirs(in_result_folder)
     vocabulary_path = path.join(in_result_folder, 'vocab.txt')
     if not path.exists(vocabulary_path):
+        logger.info('Creating vocabulary')
         vocabulary_list = create_vocabulary(
             in_dataset.values.flatten(),
             MAX_VOCABULARY_SIZE
@@ -46,41 +48,9 @@ def main(in_dataset, in_result_folder, in_config):
                 vocabulary[line.strip()] = line_index
         logger.info('Skipping vocabulary creation step'.format(vocabulary_path))
 
-    train_path = path.join(in_result_folder, 'train.csv')
-    test_path = path.join(in_result_folder, 'test.csv')
-    if not path.exists(train_path) or not path.exists(test_path):
-        for i in xrange(in_dataset.shape[0]):
-            modified_row = []
-            utterances = in_dataset.iloc[i, ]
-            for utterance in utterances:
-                utterance_ids = [
-                    str(vocabulary[token]) if token in vocabulary else str(UNK_ID)
-                    for token in utterance.split()
-                ]
-                modified_row.append(' '.join(utterance_ids))
-            in_dataset.ix[i, ] = modified_row
-
-        testset_size = int(TESTSET_RATIO * in_dataset.shape[0])
-        test_set = in_dataset.iloc[:testset_size, ]
-        train_set = in_dataset.iloc[testset_size:, ]
-        '''test_set.to_csv(
-            test_path,
-            sep=';',
-            header=False,
-            index=False,
-            encoding='utf-8'
-        )
-        train_set.to_csv(
-            train_path,
-            sep=';',
-            header=False,
-            index=False,
-            encoding='utf-8'
-        )'''
-    else:
-        logger.info('Skipping dataset creating step')
     embeddings_file = path.join(in_result_folder, 'embeddings.npy')
     if not path.exists(embeddings_file):
+        logger.info('Creating embeddings matrix')
         w2v = Word2Vec.load_word2vec_format(
             '../word2vec_google_news/GoogleNews-vectors-negative300.bin',
             binary=True
@@ -90,6 +60,41 @@ def main(in_dataset, in_result_folder, in_config):
             np.save(embeddings_out, embedding_matrix)
     else:
         logger.info('Skipping embeddings creating step')
+        # train_path = path.join(in_result_folder, 'train.csv')
+        # test_path = path.join(in_result_folder, 'test.csv')
+        # if not path.exists(train_path) or not path.exists(test_path):
+    logger.info('Creating the result bucketed/padded datasets')
+    modified_dataset = []
+    for i in xrange(in_dataset.shape[0]):
+        modified_row = []
+        utterances = in_dataset.iloc[i,]
+        for utterance in utterances:
+            utterance_ids = [
+                vocabulary[token] if token in vocabulary else UNK_ID
+                for token in utterance.split()
+                ]
+            modified_row.append(utterance_ids)
+        modified_dataset.append(modified_row)
+
+        testset_size = int(TESTSET_RATIO * in_dataset.shape[0])
+        test_set = modified_dataset[:testset_size]
+        train_set = modified_dataset[testset_size:]
+    '''test_set.to_csv(
+        test_path,
+        sep=';',
+        header=False,
+        index=False,
+        encoding='utf-8'
+    )
+    train_set.to_csv(
+        train_path,
+        sep=';',
+        header=False,
+        index=False,
+        encoding='utf-8'
+    )'''
+    # else:
+    #     logger.info('Skipping dataset creating step')
     for component_name, input_buckets in pad_and_bucket_dataset(train_set, vocabulary, in_config).iteritems():
         for bucket_index, bucket in enumerate(input_buckets):
             file_path = path.join(
@@ -106,7 +111,7 @@ def main(in_dataset, in_result_folder, in_config):
             np.save(file_path, bucket)
 
 
-def pad_and_bucket_dataset(in_dataset_csv, in_vocabulary, in_config):
+def pad_and_bucket_dataset(in_dataset, in_vocabulary, in_config):
     reverse_vocabulary = {
         value: key
         for key, value in in_vocabulary.iteritems()
@@ -114,10 +119,7 @@ def pad_and_bucket_dataset(in_dataset_csv, in_vocabulary, in_config):
     BUCKETS = in_config['buckets']
     bucketed_encoder_inputs = [[] for _ in BUCKETS]
     bucketed_decoder_inputs = [[] for _ in BUCKETS]
-    for i in xrange(in_dataset_csv.shape[0]):
-        encoder_input, decoder_input = in_dataset_csv.iloc[i, ]
-        encoder_input_ids = [int(token_id) for token_id in encoder_input.split()]
-        decoder_input_ids = [int(token_id) for token_id in decoder_input.split()]
+    for i, (encoder_input_ids, decoder_input_ids) in enumerate(in_dataset):
         bucket_id = find_bucket(
             len(encoder_input_ids),
             len(decoder_input_ids),
@@ -141,12 +143,15 @@ def pad_and_bucket_dataset(in_dataset_csv, in_vocabulary, in_config):
         bucketed_decoder_inputs[bucket_id].append(padded_decoder_input)
 
     return {
-        'encoder': [np.asarray(input_bucket) for input_bucket in bucketed_encoder_inputs],
-        'decoder': [np.asarray(input_bucket) for input_bucket in bucketed_decoder_inputs],
+        'encoder': [
+            np.asarray(input_bucket)
+            for input_bucket in bucketed_encoder_inputs
+        ],
+        'decoder': [
+            np.asarray(input_bucket)
+            for input_bucket in bucketed_decoder_inputs
+        ],
     }
-
-
-
 
 
 if __name__ == '__main__':

@@ -2,14 +2,15 @@
 
 from os import path
 import re
-import logging
+from logging import getLogger
 from collections import defaultdict
 
 import numpy as np
 
 from keras.preprocessing.sequence import pad_sequences
 
-logger = logging.getLogger()
+logger = getLogger()
+logger.setLevel('INFO')
 
 # Special vocabulary symbols - we always put them at the start.
 PAD = '__PAD__'
