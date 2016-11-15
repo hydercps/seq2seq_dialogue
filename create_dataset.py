@@ -1,6 +1,6 @@
 from itertools import count
 from sys import argv
-from logging import getLogger
+import logging
 from os import path, makedirs
 from codecs import getreader, getwriter
 
@@ -17,7 +17,8 @@ from data_utils import (
     pad_sequence
 )
 
-logger = getLogger()
+logging.basicConfig()
+logger = logging.getLogger()
 logger.setLevel('INFO')
 
 TESTSET_RATIO = 0.2
