@@ -1,5 +1,4 @@
 import numpy as np
-from pandas import read_csv
 
 
 # Generating a batch of sequences for the specific bucket

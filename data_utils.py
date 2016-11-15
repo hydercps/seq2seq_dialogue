@@ -203,6 +203,25 @@ def pad_and_bucket(source_path, target_path, buckets, max_size=None):
     return data_set
 
 
+def collect_bucket_stats(in_dataset, in_buckets):
+    result = defaultdict(lambda: 0)
+    for row in in_dataset.itertuples():
+        encoder_input_ids, decoder_input_ids = row[1:3]
+        bucket_id = find_bucket(
+            len(encoder_input_ids),
+            len(decoder_input_ids),
+            in_buckets
+        )
+        if bucket_id is None:
+            logger.warn('Could not find a bucket for lengths ({}, {})'.format(
+                len(encoder_input_ids),
+                len(decoder_input_ids)
+            ))
+            continue
+        result[bucket_id] += 1
+    return result
+
+
 def ids_to_one_hots(in_ids_list, in_vocabulary_size):
     if not len(in_ids_list):
         return None

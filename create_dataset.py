@@ -14,8 +14,8 @@ from data_utils import (
     build_embedding_matrix,
     UNK_ID,
     find_bucket,
-    pad_sequence
-)
+    pad_sequence,
+    collect_bucket_stats)
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -65,45 +65,27 @@ def main(in_dataset, in_result_folder, in_config):
         # test_path = path.join(in_result_folder, 'test.csv')
         # if not path.exists(train_path) or not path.exists(test_path):
     logger.info('Creating the result bucketed/padded datasets')
-    modified_dataset = []
-    for i in xrange(in_dataset.shape[0]):
-        modified_row = []
-        utterances = in_dataset.iloc[i,]
-        for utterance in utterances:
-            utterance_ids = [
-                vocabulary[token] if token in vocabulary else UNK_ID
-                for token in utterance.split()
-                ]
-            modified_row.append(utterance_ids)
-        modified_dataset.append(modified_row)
 
-        testset_size = int(TESTSET_RATIO * in_dataset.shape[0])
-        test_set = modified_dataset[:testset_size]
-        train_set = modified_dataset[testset_size:]
-    '''test_set.to_csv(
-        test_path,
-        sep=';',
-        header=False,
-        index=False,
-        encoding='utf-8'
-    )
-    train_set.to_csv(
-        train_path,
-        sep=';',
-        header=False,
-        index=False,
-        encoding='utf-8'
-    )'''
-    # else:
-    #     logger.info('Skipping dataset creating step')
-    for component_name, input_buckets in pad_and_bucket_dataset(train_set, vocabulary, in_config).iteritems():
+    utterance_to_ids = lambda utterance: [
+        vocabulary[token] if token in vocabulary else UNK_ID
+        for token in utterance.split()
+    ]
+    modified_dataset = in_dataset.apply(lambda row: map(utterance_to_ids, row))
+
+    testset_size = int(TESTSET_RATIO * in_dataset.shape[0])
+    test_set = modified_dataset.iloc[:testset_size, ]
+    train_set = modified_dataset.iloc[testset_size:, ]
+
+    train_buckets = pad_and_bucket_dataset(train_set, vocabulary, in_config)
+    for component_name, input_buckets in train_buckets.iteritems():
         for bucket_index, bucket in enumerate(input_buckets):
             file_path = path.join(
                 in_result_folder,
                 'train_{}_{}.npy'.format(component_name, bucket_index)
             )
             np.save(file_path, bucket)
-    for component_name, input_buckets in pad_and_bucket_dataset(test_set, vocabulary, in_config).iteritems():
+    test_buckets = pad_and_bucket_dataset(test_set, vocabulary, in_config)
+    for component_name, input_buckets in test_buckets.iteritems():
         for bucket_index, bucket in enumerate(input_buckets):
             file_path = path.join(
                 in_result_folder,
@@ -113,35 +95,33 @@ def main(in_dataset, in_result_folder, in_config):
 
 
 def pad_and_bucket_dataset(in_dataset, in_vocabulary, in_config):
-    reverse_vocabulary = {
-        value: key
-        for key, value in in_vocabulary.iteritems()
-    }
     BUCKETS = in_config['buckets']
-    bucketed_encoder_inputs = [[] for _ in BUCKETS]
-    bucketed_decoder_inputs = [[] for _ in BUCKETS]
-    for i, (encoder_input_ids, decoder_input_ids) in enumerate(in_dataset):
+    bucket_stats = collect_bucket_stats(in_dataset, BUCKETS)
+    bucketed_encoder_inputs = [
+        np.zeros((bucket_stats[bucket_id], input_length), dtype=np.uint32)
+        for bucket_id, (input_length, output_length) in enumerate(BUCKETS)
+    ]
+    bucketed_decoder_inputs = [
+        np.zeros((bucket_stats[bucket_id], output_length), dtype=np.uint32)
+        for bucket_id, (input_length, output_length) in enumerate(BUCKETS)
+    ]
+    bucket_cursors = [0 for _ in BUCKETS]
+    for row in in_dataset.itertuples():
+        encoder_input_ids, decoder_input_ids = row[1:]
         bucket_id = find_bucket(
             len(encoder_input_ids),
             len(decoder_input_ids),
             BUCKETS
         )
         if bucket_id is None:
-            logger.warn('Couldn\'t find bucket for a pair')
             continue
-        encoder_pad_length, decoder_pad_length = BUCKETS[bucket_id]
-        padded_encoder_input = pad_sequence(
-            encoder_input_ids,
-            encoder_pad_length
-        )
-        padded_decoder_input = pad_sequence(
-            decoder_input_ids,
-            decoder_pad_length,
-            reverse_vocabulary,
-            to_onehot=True
-        )
-        bucketed_encoder_inputs[bucket_id].append(padded_encoder_input)
-        bucketed_decoder_inputs[bucket_id].append(padded_decoder_input)
+        bucket_cursor = bucket_cursors[bucket_id]
+        input_length, output_length = BUCKETS[bucket_id]
+        padded_encoder_input = pad_sequence(encoder_input_ids, input_length)
+        padded_decoder_input = pad_sequence(decoder_input_ids, output_length)
+        bucketed_encoder_inputs[bucket_id][bucket_cursor] = padded_encoder_input
+        bucketed_decoder_inputs[bucket_id][bucket_cursor] = padded_decoder_input
+        bucket_cursors[bucket_id] += 1
 
     return {
         'encoder': [
