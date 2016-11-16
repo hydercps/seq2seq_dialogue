@@ -193,8 +193,7 @@ def train(in_vocabulary, in_embeddings, in_config):
         encoder_input_file,
         decoder_input_file,
         in_config['batch_size'],
-        in_vocabulary,
-        in_config['buckets'][bucket]
+        in_vocabulary
     )
     MODEL_FILE = in_config['model_weights']
     save_callback = ModelCheckpoint(
