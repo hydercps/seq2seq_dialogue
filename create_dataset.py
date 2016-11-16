@@ -22,10 +22,10 @@ logger = logging.getLogger()
 logger.setLevel('INFO')
 
 TESTSET_RATIO = 0.2
-MAX_VOCABULARY_SIZE = 70000
 
 
 def main(in_dataset, in_result_folder, in_config):
+    MAX_VOCABULARY_SIZE = in_config['vocabulary_size']
     if not path.exists(in_result_folder):
         makedirs(in_result_folder)
     vocabulary_path = path.join(in_result_folder, 'vocab.txt')

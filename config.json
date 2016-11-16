@@ -1,6 +1,7 @@
 {
   "data_folder": "dataset",
   "vocabulary": "dataset/vocab.txt",
+  "vocabulary_size": 30000,
   "model_weights": "model/weights.h5",
   "word2vec_model": "../word2vec_google_news/GoogleNews-vectors-negative300.bin",
   "embeddings_matrix": "dataset/embeddings.npy",
