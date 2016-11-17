@@ -1,5 +1,4 @@
 import numpy as np
-from os import path
 
 # Generating a batch of sequences for the specific bucket
 

@@ -20,13 +20,18 @@ logging.getLogger().setLevel('INFO')
 # See seq2seq_model.Seq2SeqModel for details of how they work.
 
 
+class Mode(object):
+    TRAIN = 0
+    TEST = 1
+
+
 def create_model(
     in_encoder_vocabulary,
     in_decoder_vocabulary,
     in_embedding_matrix,
     in_input_length,
     in_output_length,
-    mode='train'
+    mode=Mode.TRAIN
 ):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
     embedding_layer = Embedding(
@@ -44,7 +49,7 @@ def create_model(
         hidden_dim=32,
         output_length=in_output_length,
         depth=1,
-        dropout=0.0 if mode == 'test' else 0.2
+        dropout=0.0 if mode == Mode.TEST else 0.2
     )
     model = Sequential()
     model.add(embedding_layer)
@@ -52,37 +57,6 @@ def create_model(
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam')
     return model
-
-
-'''
-def train_old(train_set, dev_set):
-    train_bucket_sizes = [len(train_set[b]) for b in xrange(len(BUCKETS))]
-    train_total_size = float(sum(train_bucket_sizes))
-
-    # A bucket scale is a list of increasing numbers from 0 to 1 that we'll use
-    # to select a bucket. Length of [scale[i], scale[i+1]] is proportional to
-    # the size if i-th training bucket, as used later.
-    train_buckets_scale = [
-        sum(train_bucket_sizes[:i + 1]) / train_total_size
-        for i in xrange(len(train_bucket_sizes))
-    ]
-
-    model = create_model()
-    # Choose a bucket according to data distribution. We pick a random number
-    # in [0, 1] and use the corresponding interval in train_buckets_scale.
-    random_number_01 = np.random.random_sample()
-    bucket_id = min([
-        i for i in xrange(len(train_buckets_scale))
-        if random_number_01 < train_buckets_scale[i]
-    ])
-    # Get a batch and make a step
-    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-        train_set,
-        bucket_id
-    )
-    model.fit(encoder_inputs, decoder_inputs)
-    return model
-'''
 
 
 def decode():
@@ -215,21 +189,31 @@ def train(in_vocabulary, in_embeddings, in_config):
 
 def evaluate(in_vocabulary, in_embeddings, in_config):
     logging.info('Evaluating the trained model')
+    BUCKET = 1
     model = create_model(
         in_vocabulary,
         in_vocabulary,
         in_embeddings,
-        in_config['buckets'][1][0],
-        in_config['buckets'][1][1],
-        mode='test'
+        in_config['buckets'][BUCKET][0],
+        in_config['buckets'][BUCKET][1],
+        mode=Mode.TEST
     )
     MODEL_FILE = in_config['model_weights']
     model.load_weights(MODEL_FILE)
+
+    encoder_input_file = path.join(
+        in_config['data_folder'],
+        'test_encoder_{}.npy'.format(BUCKET)
+    )
+    decoder_input_file = path.join(
+        in_config['data_folder'],
+        'test_decoder_{}.npy'.format(BUCKET)
+    )
     test_batch_generator = BatchGenerator(
-        in_config['test_set'],
-        1,
-        in_vocabulary,
-        in_config['buckets'][1]
+        encoder_input_file,
+        decoder_input_file,
+        in_config['batch_size'],
+        in_vocabulary
     )
     print model.evaluate_generator(
         test_batch_generator,
@@ -259,4 +243,3 @@ if __name__ == '__main__':
     with getreader('utf-8')(open(config_file)) as config_in:
         config = load(config_in)
     main(mode, config)
-
