@@ -1,6 +1,6 @@
 from codecs import getreader
 from os import makedirs, path
-from sys import argv
+from sys import argv, stdin
 import logging
 from json import load
 
@@ -13,6 +13,7 @@ from keras.layers.core import Activation
 
 from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
+from data_utils import truncate_decoded_sequence, find_bucket, pad_sequence
 
 logging.getLogger().setLevel('INFO')
 
@@ -120,21 +121,50 @@ def self_test():
                  bucket_id, False)
 
 
-def decode_line(model, enc_vocab, in_embeddings, sentence):
-    words = sentence.split()
-    decoder_inputs = np.zeros(
-        (1, len(words), in_embeddings.shape[1]),
-        dtype=np.int32
+def live_decode(in_vocabulary, in_embeddings, in_config):
+    logging.info('Loading the trained model')
+    BUCKET = 1
+    model = create_model(
+        in_vocabulary,
+        in_vocabulary,
+        in_embeddings,
+        in_config['buckets'][BUCKET][0],
+        in_config['buckets'][BUCKET][1],
+        mode=Mode.TEST
     )
-    for word_index, word in enumerate(words):
-        token_id = enc_vocab[word.lower()]
-        decoder_inputs[0][word_index][token_id] = 1
-    decoder_outputs = model.predict(decoder_inputs)
-    result = ' '.join([
-        in_embeddings.similar_by_vector(output)[0][0]
-        for output in decoder_outputs
-    ])
-    return result
+    MODEL_FILE = in_config['model_weights']
+    model.load_weights(MODEL_FILE)
+
+    vocabulary_map = {
+        token: index
+        for index, token in enumerate(in_vocabulary)
+    }
+    user_input = ''
+    print 'Here you go'
+    while True:
+        user_input = stdin.readline().lower().strip()
+        if user_input == 'q':
+            break
+        token_ids = [
+            vocabulary_map[token]
+            for token in user_input.split()
+        ]
+        BUCKETS = in_config['buckets']
+        bucket_id = find_bucket(len(token_ids), 0, BUCKETS)
+        decoder_inputs = pad_sequence(
+            token_ids,
+            BUCKETS[bucket_id][0]
+        )
+        decoder_input_matrix = np.asarray(decoder_inputs)
+        decoder_input_matrix = decoder_input_matrix.reshape([1] + list(decoder_input_matrix.shape))
+        decoder_outputs = model.predict(decoder_input_matrix)
+        decoded_ids = truncate_decoded_sequence(
+            np.argmax(decoder_outputs, axis=1)[0]
+        )
+        print ' '.join([
+            in_vocabulary[decoded_token]
+            for decoded_token in decoded_ids
+        ])
 
 
 def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
@@ -216,7 +246,7 @@ def evaluate(in_vocabulary, in_embeddings, in_config):
         in_vocabulary
     )
     print model.evaluate_generator(
-        test_batch_generator,
+        generate_sequences(test_batch_generator),
         test_batch_generator.get_dataset_size()
     )
 
@@ -233,11 +263,13 @@ def main(in_mode, in_config):
         train(VOCAB, EMBEDDINGS, in_config)
     if in_mode == 'test':
         evaluate(VOCAB, EMBEDDINGS, in_config)
+    if in_mode == 'live_decode':
+        live_decode(VOCAB, EMBEDDINGS, in_config)
 
 
 if __name__ == '__main__':
     if len(argv) < 3:
-        print 'Usage: seq2seq_dialogue.py <train/test> <config file>'
+        print 'Usage: seq2seq_dialogue.py <train/test/live_decode> <config file>'
         exit()
     mode, config_file = argv[1:3]
     with getreader('utf-8')(open(config_file)) as config_in:

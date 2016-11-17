@@ -38,7 +38,7 @@ def find_bucket(in_src_length, in_tgt_length, in_buckets):
 def pad_sequence(
     in_sequence,
     in_pad_length,
-    in_reverse_vocabulary=None,
+    vocabulary_size=None,
     to_onehot=False
 ):
     sequence_padded = pad_sequences(
@@ -51,7 +51,7 @@ def pad_sequence(
     if to_onehot:
         sequence_padded = ids_to_one_hots(
             sequence_padded,
-            len(in_reverse_vocabulary)
+            vocabulary_size
         )
     return sequence_padded
 
@@ -270,3 +270,13 @@ def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):
         for word_index, word in enumerate(in_w2v_model.vocab.keys()):
             result[word_index] = in_w2v_model[word]
     return result
+
+
+def truncate_decoded_sequence(in_sequence):
+    result = in_sequence
+    stop_index = list(in_sequence).index(STOP_ID)
+    if stop_index != -1:
+        result = result[:stop_index]
+    result = filter(lambda token_id: token_id != PAD_ID, result)
+    return result
+
