@@ -77,6 +77,7 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
         in_embeddings,
         in_config['buckets'][BUCKET_ID][0],
         in_config['buckets'][BUCKET_ID][1],
+        in_config,
         mode=Mode.TEST
     )
     MODEL_FILE = in_config['model_weights']
@@ -122,7 +123,8 @@ def train(in_vocabulary, in_embeddings, in_config):
         in_vocabulary,
         in_embeddings,
         in_config['buckets'][BUCKET_ID][0],
-        in_config['buckets'][BUCKET_ID][1]
+        in_config['buckets'][BUCKET_ID][1],
+        in_config
     )
     encoder_input_file = path.join(
         in_config['data_folder'],
@@ -165,6 +167,7 @@ def evaluate(in_vocabulary, in_embeddings, in_config):
         in_embeddings,
         in_config['buckets'][BUCKET_ID][0],
         in_config['buckets'][BUCKET_ID][1],
+        in_config,
         mode=Mode.TEST
     )
     MODEL_FILE = in_config['model_weights']
