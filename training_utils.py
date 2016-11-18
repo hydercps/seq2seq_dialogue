@@ -9,9 +9,9 @@ class DecodingDemo(Callback):
         self.vocabulary = in_vocabulary
         self.demo_inputs = in_demo_inputs
 
-    def on_batch_end(self, batch):
+    def on_batch_end(self, batch, logs):
         print 'Decoding demo:' 
-        for input in in_demo_inputs;
+        for input in in_demo_inputs:
             output_softmaxes = self.model.predict(input.reshape([1] + input.shape))
             truncated_output = truncate_decoded_sequence(
                 np.argmax(output_softmaxes[0], axis=1)
