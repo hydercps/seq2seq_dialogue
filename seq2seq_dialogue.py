@@ -14,8 +14,13 @@ from keras.optimizers import SGD
 
 from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
-from data_utils import truncate_decoded_sequence, find_bucket, pad_sequence, \
+from data_utils import (
+    truncate_decoded_sequence,
+    find_bucket,
+    pad_sequence,
     GO_ID
+)
+from training_utils import DecodingDemo
 
 logging.getLogger().setLevel('INFO')
 
@@ -145,15 +150,16 @@ def train(in_vocabulary, in_embeddings, in_config):
         MODEL_FILE,
         monitor='val_loss',
         verbose=1,
-        save_best_only=True,
+        save_best_only=False,
         save_weights_only=True,
         mode='auto'
     )
+    demo_callback = DecodingDemo(in_vocabulary, np.load(encoder_input_file)[:10]) 
     model.fit_generator(
         generate_sequences(train_batch_generator),
         nb_epoch=in_config['nb_epoch'],
         samples_per_epoch=in_config['samples_per_epoch'],
-        callbacks=[save_callback]
+        callbacks=[save_callback, demo_callback]
     )
     evaluate(in_vocabulary, in_embeddings, in_config)
 
