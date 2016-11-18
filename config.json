@@ -1,10 +1,11 @@
 {
+  "testset_ratio": 0.2,
   "data_folder": "dataset",
   "vocabulary": "dataset/vocab.txt",
   "vocabulary_size": 30000,
   "model_weights": "model/weights.h5",
   "word2vec_model": "../word2vec_google_news/GoogleNews-vectors-negative300.bin",
-  "embeddings_matrix": "dataset/embeddings.npy",
+  "embedding_matrix": "dataset/embeddings.npy",
   "buckets": [[5, 10], [10, 15], [20, 25], [40, 50]],
   "layer_size": 256,
   "max_layers": 3,

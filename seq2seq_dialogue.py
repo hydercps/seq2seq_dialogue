@@ -17,9 +17,6 @@ from data_utils import truncate_decoded_sequence, find_bucket, pad_sequence
 
 logging.getLogger().setLevel('INFO')
 
-# We use a number of buckets and pad to the closest one for efficiency.
-# See seq2seq_model.Seq2SeqModel for details of how they work.
-
 
 class Mode(object):
     TRAIN = 0
@@ -60,67 +57,6 @@ def create_model(
     return model
 
 
-def decode():
-  with tf.Session() as sess:
-    # Create model and load parameters.
-    model = create_model(sess, True)
-    model.batch_size = 1  # We decode one sentence at a time.
-
-    # Load vocabularies.
-    enc_vocab_path = os.path.join(gConfig['working_directory'],"vocab%d.enc" % gConfig['enc_vocab_size'])
-    dec_vocab_path = os.path.join(gConfig['working_directory'],"vocab%d.dec" % gConfig['dec_vocab_size'])
-
-    enc_vocab, _ = data_utils.initialize_vocabulary(enc_vocab_path)
-    _, rev_dec_vocab = data_utils.initialize_vocabulary(dec_vocab_path)
-
-    # Decode from standard input.
-    sys.stdout.write("> ")
-    sys.stdout.flush()
-    sentence = sys.stdin.readline()
-    while sentence:
-      # Get token-ids for the input sentence.
-      token_ids = data_utils.sentence_to_token_ids(tf.compat.as_bytes(sentence), enc_vocab)
-      # Which bucket does it belong to?
-      bucket_id = min([b for b in xrange(len(_buckets))
-                       if _buckets[b][0] > len(token_ids)])
-      # Get a 1-element batch to feed the sentence to the model.
-      encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-          {bucket_id: [(token_ids, [])]}, bucket_id)
-      # Get output logits for the sentence.
-      _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                       target_weights, bucket_id, True)
-      # This is a greedy decoder - outputs are just argmaxes of output_logits.
-      outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-      # If there is an EOS symbol in outputs, cut them at that point.
-      if data_utils.EOS_ID in outputs:
-        outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-      # Print out French sentence corresponding to outputs.
-      print " ".join([tf.compat.as_str(rev_dec_vocab[output]) for output in outputs])
-      print "> "
-      sys.stdout.flush()
-      sentence = sys.stdin.readline()
-
-
-def self_test():
-  """Test the translation model."""
-  with tf.Session() as sess:
-    print("Self-test for neural translation model.")
-    # Create model with vocabularies of 10, 2 small buckets, 2 layers of 32.
-    model = seq2seq_model.Seq2SeqModel(10, 10, [(3, 3), (6, 6)], 32, 2,
-                                       5.0, 32, 0.3, 0.99, num_samples=8)
-    sess.run(tf.initialize_all_variables())
-
-    # Fake data set for both the (3, 3) and (6, 6) bucket.
-    data_set = ([([1, 1], [2, 2]), ([3, 3], [4]), ([5], [6])],
-                [([1, 1, 1, 1, 1], [2, 2, 2, 2, 2]), ([3, 3, 3], [5, 6])])
-    for _ in xrange(5):  # Train the fake model for 5 steps.
-      bucket_id = random.choice([0, 1])
-      encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-          data_set, bucket_id)
-      model.step(sess, encoder_inputs, decoder_inputs, target_weights,
-                 bucket_id, False)
-
-
 def live_decode(in_vocabulary, in_embeddings, in_config):
     logging.info('Loading the trained model')
     BUCKET = 1
@@ -139,8 +75,7 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
         token: index
         for index, token in enumerate(in_vocabulary)
     }
-    user_input = ''
-    print 'Here you go'
+    print 'go'
     while True:
         user_input = stdin.readline().lower().strip()
         if user_input == 'q':
@@ -156,7 +91,9 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
             BUCKETS[bucket_id][0]
         )
         decoder_input_matrix = np.asarray(decoder_inputs)
-        decoder_input_matrix = decoder_input_matrix.reshape([1] + list(decoder_input_matrix.shape))
+        decoder_input_matrix = decoder_input_matrix.reshape(
+            [1] + list(decoder_input_matrix.shape)
+        )
         decoder_outputs = model.predict(decoder_input_matrix)
         decoded_ids = truncate_decoded_sequence(
             np.argmax(decoder_outputs, axis=1)[0]
