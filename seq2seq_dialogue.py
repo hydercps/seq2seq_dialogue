@@ -190,7 +190,7 @@ def main(in_mode, in_config):
         makedirs(MODEL_DIR)
     with getreader('utf-8')(open(in_config['vocabulary'])) as vocab_in:
         VOCAB = [line.strip() for line in vocab_in]
-    EMBEDDINGS = np.load(in_config['embeddings_matrix'])
+    EMBEDDINGS = np.load(in_config['embedding_matrix'])
     if in_mode == 'train':
         train(VOCAB, EMBEDDINGS, in_config)
     if in_mode == 'test':
