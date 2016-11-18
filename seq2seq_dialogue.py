@@ -10,6 +10,7 @@ from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Embedding
 from keras.layers.core import Activation
+from keras.optimizers import SGD
 
 from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
@@ -20,6 +21,7 @@ logging.getLogger().setLevel('INFO')
 
 # TODO: process all buckets
 BUCKET_ID = 0
+
 
 class Mode(object):
     TRAIN = 0
@@ -32,6 +34,7 @@ def create_model(
     in_embedding_matrix,
     in_input_length,
     in_output_length,
+    in_config,
     mode=Mode.TRAIN
 ):
     effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
@@ -47,16 +50,21 @@ def create_model(
         bidirectional=False,
         input_dim=embedding_size,
         output_dim=len(in_decoder_vocabulary),
-        hidden_dim=32,
+        hidden_dim=in_config['layer_size'],
         output_length=in_output_length,
-        depth=1,
+        depth=in_config['max_layers'],
         dropout=0.0 if mode == Mode.TEST else 0.2
     )
     model = Sequential()
     model.add(embedding_layer)
     model.add(seq2seq_model)
     model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam')
+    sgd = SGD(
+        lr=in_config['learning_rate'],
+        decay=in_config['learning_rate_decay'],
+        clipvalue=in_config['gradient_clip_value']
+    )
+    model.compile(loss='categorical_crossentropy', optimizer=sgd)
     return model
 
 

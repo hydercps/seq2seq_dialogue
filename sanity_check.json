@@ -9,7 +9,9 @@
   "buckets": [[5, 10], [10, 15], [20, 25], [40, 50]],
   "layer_size": 256,
   "max_layers": 3,
-  "max_gradient_norm": 5.0,
+  "learning_rate": 0.01,
+  "learning_rate_decay": 1e-6,
+  "gradient_clip_value": 0.5,
   "batch_size": 8,
   "nb_epoch": 10,
   "samples_per_epoch": 200
