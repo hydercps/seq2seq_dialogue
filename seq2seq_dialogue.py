@@ -13,10 +13,13 @@ from keras.layers.core import Activation
 
 from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
-from data_utils import truncate_decoded_sequence, find_bucket, pad_sequence
+from data_utils import truncate_decoded_sequence, find_bucket, pad_sequence, \
+    GO_ID
 
 logging.getLogger().setLevel('INFO')
 
+# TODO: process all buckets
+BUCKET_ID = 0
 
 class Mode(object):
     TRAIN = 0
@@ -59,13 +62,13 @@ def create_model(
 
 def live_decode(in_vocabulary, in_embeddings, in_config):
     logging.info('Loading the trained model')
-    BUCKET = 1
+
     model = create_model(
         in_vocabulary,
         in_vocabulary,
         in_embeddings,
-        in_config['buckets'][BUCKET][0],
-        in_config['buckets'][BUCKET][1],
+        in_config['buckets'][BUCKET_ID][0],
+        in_config['buckets'][BUCKET_ID][1],
         mode=Mode.TEST
     )
     MODEL_FILE = in_config['model_weights']
@@ -83,12 +86,13 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
         token_ids = [
             vocabulary_map[token]
             for token in user_input.split()
-        ]
+        ] + [GO_ID]
         BUCKETS = in_config['buckets']
         bucket_id = find_bucket(len(token_ids), 0, BUCKETS)
         decoder_inputs = pad_sequence(
             token_ids,
-            BUCKETS[bucket_id][0]
+            BUCKETS[bucket_id][0],
+            padding='pre'
         )
         decoder_input_matrix = np.asarray(decoder_inputs)
         decoder_input_matrix = decoder_input_matrix.reshape(
@@ -104,31 +108,22 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
         ])
 
 
-def visualize_decoded(in_vocab, in_w2v, in_decoder_outputs):
-    result = ' '.join([
-        in_w2v.similar_by_vector(in_decoder_outputs[vector_index])[0][0]
-        for vector_index in xrange(in_decoder_outputs.shape[0])
-    ])
-    return result
-
-
 def train(in_vocabulary, in_embeddings, in_config):
     logging.info('Training the model')
     model = create_model(
         in_vocabulary,
         in_vocabulary,
         in_embeddings,
-        in_config['buckets'][1][0],
-        in_config['buckets'][1][1]
+        in_config['buckets'][BUCKET_ID][0],
+        in_config['buckets'][BUCKET_ID][1]
     )
-    bucket = 1
     encoder_input_file = path.join(
         in_config['data_folder'],
-        'train_encoder_{}.npy'.format(bucket)
+        'train_encoder_{}.npy'.format(BUCKET_ID)
     )
     decoder_input_file = path.join(
         in_config['data_folder'],
-        'train_decoder_{}.npy'.format(bucket)
+        'train_decoder_{}.npy'.format(BUCKET_ID)
     )
     train_batch_generator = BatchGenerator(
         encoder_input_file,
@@ -156,13 +151,13 @@ def train(in_vocabulary, in_embeddings, in_config):
 
 def evaluate(in_vocabulary, in_embeddings, in_config):
     logging.info('Evaluating the trained model')
-    BUCKET = 1
+
     model = create_model(
         in_vocabulary,
         in_vocabulary,
         in_embeddings,
-        in_config['buckets'][BUCKET][0],
-        in_config['buckets'][BUCKET][1],
+        in_config['buckets'][BUCKET_ID][0],
+        in_config['buckets'][BUCKET_ID][1],
         mode=Mode.TEST
     )
     MODEL_FILE = in_config['model_weights']
@@ -170,11 +165,11 @@ def evaluate(in_vocabulary, in_embeddings, in_config):
 
     encoder_input_file = path.join(
         in_config['data_folder'],
-        'test_encoder_{}.npy'.format(BUCKET)
+        'test_encoder_{}.npy'.format(BUCKET_ID)
     )
     decoder_input_file = path.join(
         in_config['data_folder'],
-        'test_decoder_{}.npy'.format(BUCKET)
+        'test_decoder_{}.npy'.format(BUCKET_ID)
     )
     test_batch_generator = BatchGenerator(
         encoder_input_file,
