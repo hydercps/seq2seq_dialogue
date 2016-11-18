@@ -99,9 +99,8 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
             [1] + list(decoder_input_matrix.shape)
         )
         decoder_outputs = model.predict(decoder_input_matrix)
-        decoded_ids = truncate_decoded_sequence(
-            np.argmax(decoder_outputs, axis=1)[0]
-        )
+        argmaxes = np.argmax(decoder_outputs[0], axis=1)
+        decoded_ids = truncate_decoded_sequence(argmaxes)
         print ' '.join([
             in_vocabulary[decoded_token]
             for decoded_token in decoded_ids
