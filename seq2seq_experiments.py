@@ -40,6 +40,6 @@ with getwriter('utf-8')(open(path.join(RESULT_FOLDER, 'train_0.txt'), 'w')) as d
         ])
         print >>dataset_out, u';'.join([encoder_string, decoder_string])
 
-np.save(path.join(RESULT_FOLDER, 'train_encoder_0.txt'), encoder_data)
-np.save(path.join(RESULT_FOLDER, 'train_decoder_0.txt'), decoder_data)
+np.save(path.join(RESULT_FOLDER, 'train_encoder_0'), encoder_data)
+np.save(path.join(RESULT_FOLDER, 'train_decoder_0'), decoder_data)
 
