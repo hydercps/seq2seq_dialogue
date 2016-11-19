@@ -12,7 +12,6 @@ from keras.layers import Embedding
 from keras.layers.core import Activation
 from keras.optimizers import SGD
 
-from seq2seq.models import AttentionSeq2Seq
 from batch_generator import BatchGenerator, generate_sequences
 from data_utils import (
     truncate_decoded_sequence,
@@ -20,57 +19,12 @@ from data_utils import (
     pad_sequence,
     GO_ID
 )
-from training_utils import DecodingDemo
+from training_utils import DecodingDemo, create_model, Mode
 
 logging.getLogger().setLevel('INFO')
 
 # TODO: process all buckets
 BUCKET_ID = 0
-
-
-class Mode(object):
-    TRAIN = 0
-    TEST = 1
-
-
-def create_model(
-    in_encoder_vocabulary,
-    in_decoder_vocabulary,
-    in_embedding_matrix,
-    in_input_length,
-    in_output_length,
-    in_config,
-    mode=Mode.TRAIN
-):
-    effective_vocabulary_size, embedding_size = in_embedding_matrix.shape
-    embedding_layer = Embedding(
-        effective_vocabulary_size,
-        embedding_size,
-        weights=[in_embedding_matrix],
-        input_length=in_input_length,
-        trainable=True,
-        name='emb'
-    )
-    seq2seq_model = AttentionSeq2Seq(
-        bidirectional=False,
-        input_dim=embedding_size,
-        output_dim=len(in_decoder_vocabulary),
-        hidden_dim=in_config['layer_size'],
-        output_length=in_output_length,
-        depth=in_config['max_layers'],
-        dropout=0.0 if mode == Mode.TEST else 0.2
-    )
-    model = Sequential()
-    model.add(embedding_layer)
-    model.add(seq2seq_model)
-    model.add(Activation('softmax'))
-    sgd = SGD(
-        lr=in_config['learning_rate'],
-        decay=in_config['learning_rate_decay'],
-        clipvalue=in_config['gradient_clip_value']
-    )
-    model.compile(loss='categorical_crossentropy', optimizer=sgd)
-    return model
 
 
 def live_decode(in_vocabulary, in_embeddings, in_config):
@@ -121,7 +75,7 @@ def live_decode(in_vocabulary, in_embeddings, in_config):
         ])
 
 
-def train(in_vocabulary, in_embeddings, in_config):
+def train(in_vocabulary, in_embeddings, in_config, resume=False):
     logging.info('Training the model')
     model = create_model(
         in_vocabulary,
@@ -131,6 +85,10 @@ def train(in_vocabulary, in_embeddings, in_config):
         in_config['buckets'][BUCKET_ID][1],
         in_config
     )
+    MODEL_FILE = in_config['model_weights']
+    if resume:
+        model.load_weights(MODEL_FILE)
+
     encoder_input_file = path.join(
         in_config['data_folder'],
         'train_encoder_{}.npy'.format(BUCKET_ID)
@@ -145,7 +103,6 @@ def train(in_vocabulary, in_embeddings, in_config):
         in_config['batch_size'],
         in_vocabulary
     )
-    MODEL_FILE = in_config['model_weights']
     save_callback = ModelCheckpoint(
         MODEL_FILE,
         monitor='val_loss',
@@ -154,12 +111,12 @@ def train(in_vocabulary, in_embeddings, in_config):
         save_weights_only=True,
         mode='auto'
     )
-    demo_callback = DecodingDemo(in_vocabulary, np.load(encoder_input_file)[:10]) 
+    # demo_callback = DecodingDemo(in_vocabulary, in_embeddings, BUCKET_ID, in_config, np.load(encoder_input_file)[:10]) 
     model.fit_generator(
         generate_sequences(train_batch_generator),
         nb_epoch=in_config['nb_epoch'],
         samples_per_epoch=in_config['samples_per_epoch'],
-        callbacks=[save_callback, demo_callback]
+        callbacks=[save_callback] # , demo_callback]
     )
     evaluate(in_vocabulary, in_embeddings, in_config)
 
@@ -199,7 +156,7 @@ def evaluate(in_vocabulary, in_embeddings, in_config):
     )
 
 
-def main(in_mode, in_config):
+def main(in_mode, in_config, **kwargs):
     MODEL_FILE = in_config['model_weights']
     MODEL_DIR = path.dirname(MODEL_FILE)
     if not path.exists(MODEL_DIR):
@@ -208,7 +165,7 @@ def main(in_mode, in_config):
         VOCAB = [line.strip() for line in vocab_in]
     EMBEDDINGS = np.load(in_config['embedding_matrix'])
     if in_mode == 'train':
-        train(VOCAB, EMBEDDINGS, in_config)
+        train(VOCAB, EMBEDDINGS, in_config, **kwargs)
     if in_mode == 'test':
         evaluate(VOCAB, EMBEDDINGS, in_config)
     if in_mode == 'live_decode':
@@ -217,9 +174,10 @@ def main(in_mode, in_config):
 
 if __name__ == '__main__':
     if len(argv) < 3:
-        print 'Usage: seq2seq_dialogue.py <train/test/live_decode> <config file>'
+        print 'Usage: seq2seq_dialogue.py <train/test/live_decode> <config file> [--resume]'
         exit()
     mode, config_file = argv[1:3]
     with getreader('utf-8')(open(config_file)) as config_in:
         config = load(config_in)
-    main(mode, config)
+    main(mode, config, resume='--resume' in argv)
+

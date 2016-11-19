@@ -134,12 +134,12 @@ def ids_to_embeddings(in_ids, in_embedding_matrix):
 def build_embedding_matrix(in_w2v_model, in_base_vocabulary=None):
     EMBEDDING_DIM = in_w2v_model.vector_size
     # if a base vocabulary is given, only building embeddings for words in it
-    if in_base_vocabulary:
+    if in_base_vocabulary is not None:
         result = np.zeros(
-            (len(in_base_vocabulary) + 1, EMBEDDING_DIM),
+            (len(in_base_vocabulary), EMBEDDING_DIM),
             dtype=np.float32
         )
-        for word_index, word in enumerate(in_base_vocabulary):
+        for word, word_index in in_base_vocabulary.iteritems():
             if word in in_w2v_model:
                 # words not found in embedding index will be all-zeros.
                 result[word_index] = in_w2v_model[word]

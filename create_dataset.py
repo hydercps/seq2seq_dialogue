@@ -134,7 +134,7 @@ def main(in_dataset, in_result_folder, in_config):
     if not path.exists(in_result_folder):
         makedirs(in_result_folder)
     vocabulary = get_vocabulary(in_dataset, in_result_folder, in_config)
-    embeddings = get_embedding_matrix(in_dataset, in_config)
+    embeddings = get_embedding_matrix(vocabulary, in_config)
     train_buckets, test_buckets = get_bucketed_datasets(
         vocabulary,
         in_dataset,
